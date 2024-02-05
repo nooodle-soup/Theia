@@ -1,19 +1,10 @@
 from pydantic import BaseModel, Field, validator
 from typing import List, Union
-from enum import Enum
 
 
-class DatasetEnum(str, Enum):
-    landsat_tm_c1="landsat_tm_c1"
-    landsat_etm_c1="landsat_etm_c1"
-    landsat_8_c1="landsat_8_c1"
-    landsat_tm_c2_l1="landsat_tm_c2_l1"
-    landsat_tm_c2_l2="landsat_tm_c2_l2"
-    landsat_etm_c2_l1="landsat_etm_c2_l1"
-    landsat_etm_c2_l2="landsat_etm_c2_l2"
-    landsat_ot_c2_l1="landsat_ot_c2_l1"
-    landsat_ot_c2_l2="landsat_ot_c2_l2"
-    sentinel_2a="sentinel_2a"
+class Dataset(BaseModel):
+    collectionName: str
+    datasetAlias: str
 
 
 class BaseDataModel(BaseModel):
@@ -107,7 +98,7 @@ class SceneFilter(BaseDataModel):
 
 
 class SearchParams(BaseModel):
-    dataset: DatasetEnum = Field(default="")
+    dataset: Dataset = Field(default=None)
     longitude: float | None = Field(default=None)
     latitude: float | None = Field(default=None)
     bbox: List[Coordinate] | None = Field(default=None)
