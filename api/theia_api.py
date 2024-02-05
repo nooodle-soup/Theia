@@ -1,27 +1,35 @@
 import json
-import string
-import random
 from datetime import datetime
-from dateutil import parser
+import sys
+from typing import List, Type
 import time
 from urllib.parse import urljoin
 
-import requests
+from pydantic import BaseModel, PrivateAttr
 
-from util import check_exceptions
-from errors import USGSRateLimitError
+import requests
+from api.data_types import Coordinate, SearchParams, SpatialFilterMbr
+from api.util import check_exceptions
+from api.errors import USGSRateLimitError
 
 API_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 
 
-class TheiaAPI(object):
+class TheiaAPI(BaseModel):
+    _base_url: str = PrivateAttr(default=API_URL)
+    _session: requests.sessions.Session = PrivateAttr(default_factory=requests.Session)
+
+    class Config:
+        arbitrary_types_allowed = True
 
     def __init__(self, username, password):
-        self._base_url = API_URL
-        self._session = requests.Session()
-        self._login(username, password)
+        super().__init__()
+        self.login(username, password)
 
-    def _login(self, username, password):
+    def __del__(self):
+        self.logout()
+
+    def login(self, username, password):
         params = {
             "username": username,
             "password": password
@@ -31,7 +39,7 @@ class TheiaAPI(object):
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         self._session.headers["X-Auth-Token"] = response
 
-    def _logout(self):
+    def logout(self):
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#logout
         self._send_request_to_USGS("logout")
@@ -57,3 +65,32 @@ class TheiaAPI(object):
 
         assert response is not None
         return response.json().get("data")
+
+    def search(self, params: Type[SearchParams]):
+        if not isinstance(params, SearchParams):
+            raise TypeError(
+                "Expected 'params' to be of type 'SearchParams',"
+                f" got {type(params)} instead"
+            )
+
+        spatialFilter = None
+        if not params.bbox:
+            assert params.latitude is not None
+            assert params.longitude is not None
+            spatialFilter = SpatialFilterMbr(
+                lowerLeft=Coordinate(
+                    longitude=params.longitude,
+                    latitude=params.latitude
+                ),
+                upperRight=Coordinate(
+                    longitude=params.longitude,
+                    latitude=params.latitude
+                ),
+            )
+        else:
+            spatialFilter = SpatialFilterMbr(
+                lowerLeft=params.bbox[0],
+                upperRight=params.bbox[1]
+            )
+
+
