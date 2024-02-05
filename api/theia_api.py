@@ -1,6 +1,4 @@
 import json
-from datetime import datetime
-import sys
 from typing import List, Type
 import time
 from urllib.parse import urljoin
@@ -8,7 +6,7 @@ from urllib.parse import urljoin
 from pydantic import BaseModel, PrivateAttr
 
 import requests
-from api.data_types import Coordinate, SearchParams, SpatialFilterMbr
+from api.data_types import AcquisitionFilter, Coordinate, Dataset, SearchParams, SpatialFilterMbr
 from api.util import check_exceptions
 from api.errors import USGSRateLimitError
 
@@ -18,6 +16,8 @@ API_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 class TheiaAPI(BaseModel):
     _base_url: str = PrivateAttr(default=API_URL)
     _session: requests.sessions.Session = PrivateAttr(default_factory=requests.Session)
+    _loggedIn: bool = PrivateAttr(default=False)
+    datasetDetails: List[Dataset] | None = None
 
     class Config:
         arbitrary_types_allowed = True
@@ -25,6 +25,19 @@ class TheiaAPI(BaseModel):
     def __init__(self, username, password):
         super().__init__()
         self.login(username, password)
+        if self._loggedIn:
+            self._initDatasetDetails()
+
+    def _initDatasetDetails(self):
+        _datasetDetails = self._send_request_to_USGS("dataset-search")
+
+        self.datasetDetails = [
+            Dataset(
+                collectionName=dataset["collectionName"],
+                datasetAlias=dataset["datasetAlias"]
+            )
+            for dataset in _datasetDetails
+        ]
 
     def __del__(self):
         self.logout()
@@ -34,16 +47,18 @@ class TheiaAPI(BaseModel):
             "username": username,
             "password": password
         }
-        assert params is not None
+
         response = self._send_request_to_USGS("login", params)
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         self._session.headers["X-Auth-Token"] = response
+        self._loggedIn = True
 
     def logout(self):
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#logout
         self._send_request_to_USGS("logout")
         self._session = requests.Session()
+        self._loggedIn = False
 
     def _send_request_to_USGS(self, endpoint, params=None):
         response = None
@@ -63,7 +78,6 @@ class TheiaAPI(BaseModel):
             )
             check_exceptions(response)
 
-        assert response is not None
         return response.json().get("data")
 
     def search(self, params: Type[SearchParams]):
@@ -75,8 +89,6 @@ class TheiaAPI(BaseModel):
 
         spatialFilter = None
         if not params.bbox:
-            assert params.latitude is not None
-            assert params.longitude is not None
             spatialFilter = SpatialFilterMbr(
                 lowerLeft=Coordinate(
                     longitude=params.longitude,
@@ -93,4 +105,9 @@ class TheiaAPI(BaseModel):
                 upperRight=params.bbox[1]
             )
 
-
+        acquisitionFilter = None
+        if params.start_date and params.end_date:
+            acquisitionFilter = AcquisitionFilter(
+                start=params.start_date,
+                end=params.end_date
+            )
