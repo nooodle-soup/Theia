@@ -1,4 +1,4 @@
-from errors import USGSAuthenticationError, USGSError, USGSRateLimitError, USGSUnauthorizedError
+from api.errors import USGSAuthenticationError, USGSError, USGSRateLimitError, USGSUnauthorizedError
 
 
 def check_exceptions(response):
@@ -17,4 +17,5 @@ def check_exceptions(response):
         case "RATE_LIMIT":
             raise USGSRateLimitError(msg)
         case _:
-            raise USGSError(msg)
+            if error["code"] is not None:
+                raise USGSError(msg)
