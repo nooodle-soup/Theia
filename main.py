@@ -6,8 +6,8 @@ config = {
 }
 
 
-if config['USERNAME'] == 'None':
+if config["USERNAME"] == "None":
     pass
 
-if config['PASSWORD'] == 'None':
+if config["PASSWORD"] == "None":
     pass
