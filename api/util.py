@@ -1,12 +1,15 @@
-from api.errors import USGSAuthenticationError, USGSError, USGSRateLimitError, USGSUnauthorizedError
+from requests import Response
+from api.errors import (
+    USGSAuthenticationError,
+    USGSError,
+    USGSRateLimitError,
+    USGSUnauthorizedError,
+)
 
 
-def check_exceptions(response):
+def check_exceptions(response: Response):
     data = response.json()
-    error = {
-        "code": data.get("errorCode"),
-        "msg": data.get("errorMessage")
-    }
+    error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
     msg = f"{error['code']}: {error['msg']}"
 
     match error["code"]:
