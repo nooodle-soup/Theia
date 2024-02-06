@@ -33,6 +33,7 @@ class USGSAuthenticationError(Exception):
     """
     User credential verification failed
     """
+
     pass
 
 
@@ -40,6 +41,7 @@ class USGSUnauthorizedError(Exception):
     """
     User account does not have access to the requested endpoint
     """
+
     pass
 
 
