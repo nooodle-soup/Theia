@@ -6,7 +6,15 @@ from urllib.parse import urljoin
 from pydantic import BaseModel, PrivateAttr
 
 import requests
-from api.data_types import AcquisitionFilter, Coordinate, Dataset, SearchParams, SpatialFilterMbr
+from api.data_types import (
+    AcquisitionFilter,
+    CloudCoverFilter,
+    Coordinate,
+    Dataset,
+    SceneFilter,
+    SearchParams,
+    SpatialFilterMbr,
+)
 from api.util import check_exceptions
 from api.errors import USGSRateLimitError
 
@@ -34,7 +42,7 @@ class TheiaAPI(BaseModel):
         self.datasetDetails = [
             Dataset(
                 collectionName=dataset["collectionName"],
-                datasetAlias=dataset["datasetAlias"]
+                datasetAlias=dataset["datasetAlias"],
             )
             for dataset in _datasetDetails
         ]
@@ -43,10 +51,7 @@ class TheiaAPI(BaseModel):
         self.logout()
 
     def login(self, username, password):
-        params = {
-            "username": username,
-            "password": password
-        }
+        params = {"username": username, "password": password}
 
         response = self._send_request_to_USGS("login", params)
         # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
@@ -65,17 +70,11 @@ class TheiaAPI(BaseModel):
         request_url = urljoin(self._base_url, endpoint)
 
         try:
-            response = self._session.post(
-                url=request_url,
-                data=json.dumps(params)
-            )
+            response = self._session.post(url=request_url, data=json.dumps(params))
             check_exceptions(response)
         except USGSRateLimitError:
             time.sleep(3)
-            response = self._session.post(
-                url=request_url,
-                data=json.dumps(params)
-            )
+            response = self._session.post(url=request_url, data=json.dumps(params))
             check_exceptions(response)
 
         return response.json().get("data")
@@ -89,25 +88,42 @@ class TheiaAPI(BaseModel):
 
         spatialFilter = None
         if not params.bbox:
+            assert params.longitude is not None
+            assert params.latitude is not None
             spatialFilter = SpatialFilterMbr(
                 lowerLeft=Coordinate(
-                    longitude=params.longitude,
-                    latitude=params.latitude
+                    longitude=params.longitude, latitude=params.latitude
                 ),
                 upperRight=Coordinate(
-                    longitude=params.longitude,
-                    latitude=params.latitude
+                    longitude=params.longitude, latitude=params.latitude
                 ),
             )
         else:
             spatialFilter = SpatialFilterMbr(
-                lowerLeft=params.bbox[0],
-                upperRight=params.bbox[1]
+                lowerLeft=params.bbox[0], upperRight=params.bbox[1]
             )
 
         acquisitionFilter = None
         if params.start_date and params.end_date:
             acquisitionFilter = AcquisitionFilter(
-                start=params.start_date,
-                end=params.end_date
+                start=params.start_date, end=params.end_date
             )
+
+        cloudCoverFilter = CloudCoverFilter()
+        if params.max_cloud_cover and params.min_cloud_cover:
+            cloudCoverFilter = CloudCoverFilter(
+                min=params.min_cloud_cover, max=params.max_cloud_cover
+            )
+        elif params.max_cloud_cover:
+            cloudCoverFilter = CloudCoverFilter(max=params.max_cloud_cover)
+        elif params.min_cloud_cover:
+            cloudCoverFilter = CloudCoverFilter(min=params.min_cloud_cover)
+
+        sceneFilter = SceneFilter(
+            acquisitionFilter=acquisitionFilter,
+            cloudCoverFilter=cloudCoverFilter,
+            spatialFilter=spatialFilter,
+            seasonalFilter=params.months,
+        )
+
+        print(sceneFilter.to_json())
