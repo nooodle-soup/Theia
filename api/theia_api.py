@@ -89,7 +89,7 @@ class TheiaAPI(BaseModel):
     def _send_request_to_USGS(self, endpoint: str, params: str = ""):
         if not isinstance(params, str):
             raise TypeError(
-                "Expected 'params' to be of type 'Json'," f" got {type(params)} instead"
+                "Expected 'params' to be of type 'str'," f" got {type(params)} instead"
             )
         response = None
         request_url = urljoin(self._base_url, endpoint)
@@ -104,7 +104,7 @@ class TheiaAPI(BaseModel):
 
         return response
 
-    def _generate_search_filter(self, params: Type[SearchParams]) -> Json:
+    def _generate_search_filter(self, params: Type[SearchParams]):
         if isinstance(params, SearchParams):
             filter_dict = {}
 
