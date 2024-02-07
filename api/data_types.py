@@ -12,6 +12,11 @@ class BaseDataModel(BaseModel):
         return self.model_dump_json(exclude_unset=True)
 
 
+class User(BaseDataModel):
+    username: str
+    password: str
+
+
 class Coordinate(BaseDataModel):
     # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#coordinate
     longitude: float
@@ -88,7 +93,7 @@ class AcquisitionFilter(BaseDataModel):
 class CloudCoverFilter(BaseDataModel):
     # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#cloudCoverFilter
     min: int = 0
-    max: int = 100
+    max: int = 30
     includeUnknown: bool = False
 
 
@@ -102,14 +107,14 @@ class SceneFilter(BaseDataModel):
     # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#sceneFilter
     acquisitionFilter: AcquisitionFilter | None = None
     cloudCoverFilter: CloudCoverFilter | None = None
-    datasetName: str | None = None
+    # datasetName: str | None = None
     metadataFilter: MetadataValue | None = None
     seasonalFilter: List[int] | None = None
     spatialFilter: SpatialFilterMbr | SpatialFilterGeoJson | None = None
 
 
-class SearchParams(BaseModel):
-    dataset: Dataset = Field(default=None)
+class SearchParams(BaseDataModel):
+    dataset: str
     longitude: float | None = Field(default=None)
     latitude: float | None = Field(default=None)
     bbox: List[Coordinate] | None = Field(default=None)
@@ -157,3 +162,10 @@ class SearchParams(BaseModel):
                     "Either provide longitude and latitude or bbox, not both"
                 )
         return v
+
+
+class SceneSearch(BaseDataModel):
+    datasetName: Dataset
+    sceneFilter: SceneFilter | None = Field(default=None)
+    maxResults: int | None = Field(default=100)
+    metadataType: str = Field(default="full", frozen=True)
