@@ -1,15 +1,19 @@
+import json
 from pydantic import BaseModel, Field, validator
 from typing import List, Union
+
+
+class BaseDataModel(BaseModel):
+    def to_json(self):
+        return self.model_dump_json(exclude_none=True)
+
+    def to_pretty_json(self):
+        return self.model_dump_json(exclude_none=True, indent=2)
 
 
 class Dataset(BaseModel):
     collectionName: str
     datasetAlias: str
-
-
-class BaseDataModel(BaseModel):
-    def to_json(self):
-        return self.model_dump_json(exclude_unset=True)
 
 
 class User(BaseDataModel):
@@ -165,7 +169,7 @@ class SearchParams(BaseDataModel):
 
 
 class SceneSearch(BaseDataModel):
-    datasetName: Dataset
+    datasetName: str
     sceneFilter: SceneFilter | None = Field(default=None)
     maxResults: int | None = Field(default=100)
     metadataType: str = Field(default="full", frozen=True)
