@@ -36,6 +36,17 @@ class TheiaAPI(BaseModel):
         arbitrary_types_allowed = True
 
     def __init__(self, username: str, password: str) -> None:
+        """
+        Sets up `User` details and logging for the api object.
+        Logs the user in and gets availabel dataset details.
+
+        Parameters
+        ----------
+        username: str
+            The user's USGS username.
+        password: str
+            The user's USGS password.
+        """
         super().__init__()
         self._user = User(username=username, password=password)
         self.setup_logging()
@@ -45,40 +56,35 @@ class TheiaAPI(BaseModel):
 
     def setup_logging(self) -> None:
         """
-        Sets up logging for the TheiaAPI object.
+        Sets up logging for the `TheiaAPI` object.
         The log file is located in the directory where the code is run from.
         """
-        # Configure the logger
         self._logger.setLevel(logging.DEBUG)
 
-        # Create console handler and set level to INFO
         console_handler = logging.StreamHandler()
         console_handler.setLevel(logging.INFO)
 
-        # Create file handler and set level to DEBUG
         log_folder = "logs"
         os.makedirs(log_folder, exist_ok=True)
         log_file_path = os.path.join(log_folder, "theia_api.log")
         file_handler = logging.FileHandler(log_file_path)
         file_handler.setLevel(logging.DEBUG)
 
-        # Create formatter and add it to the handlers
         formatter = logging.Formatter(
             "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
         )
         console_handler.setFormatter(formatter)
         file_handler.setFormatter(formatter)
 
-        # Add the handlers to the _logger
         self._logger.addHandler(console_handler)
         self._logger.addHandler(file_handler)
 
     def _initDatasetDetails(self) -> None:
         """
-        Requests and stores the datasets that are available to the User
+        Requests and stores the datasets that are available to the user
         accessing the USGS M2M API.
         """
-        _datasetDetails = self._send_request_to_USGS("dataset-search").get("data")
+        _datasetDetails = self.dataset_search().get("data")
 
         self.datasetDetails = [
             Dataset(
@@ -87,11 +93,10 @@ class TheiaAPI(BaseModel):
             )
             for dataset in _datasetDetails
         ]
-        self.logout()
 
     def __del__(self) -> None:
         """
-        Log the User out before destroying the TheiaAPI object.
+        Log the User out before destroying the `TheiaAPI` object.
         """
         self.logout()
 
@@ -103,11 +108,11 @@ class TheiaAPI(BaseModel):
         Notes
         -----
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login
+        Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         """
         self._logger.info("Logging In")
 
         response = self._send_request_to_USGS("login", self._user.to_json())
-        # Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         self._session.headers["X-Auth-Token"] = response.get("data")
         self._loggedIn = True
 
@@ -120,7 +125,6 @@ class TheiaAPI(BaseModel):
         Notes
         -----
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#logout
-        Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         """
         self._logger.info("Logging Out")
 
@@ -132,7 +136,7 @@ class TheiaAPI(BaseModel):
 
     def search_scenes(self, search_params: SearchParams) -> Json:
         """
-        Searches the scenes as per the paramaters passed in search_params.
+        Searches the scenes as per the paramaters passed in `search_params`.
 
         Parameters
         ----------
@@ -164,6 +168,26 @@ class TheiaAPI(BaseModel):
         self._logger.info("Scene Search Successful")
         return response
 
+    def dataset_search(self) -> Json:
+        """
+        Searches datasets available to the user.
+
+        Returns
+        -------
+        response: Json
+            The response from the "dataset-search" endpoint of the USGS M2M API.
+
+        Notes
+        -----
+        Reference: https://m2m.cr.usgs.gov/api/docs/reference/#dataset-search
+        """
+        self._logger.info("Searching Datasets")
+
+        response = self._send_request_to_USGS("dataset-search")
+
+        self._logger.info("Dataset Details Retrieved")
+        return response
+
     def _send_request_to_USGS(self, endpoint: str, payload: Json = "") -> Json:
         """
         Sends request to the USGS M2M API at the given endpoint with the given payload.
@@ -174,6 +198,11 @@ class TheiaAPI(BaseModel):
             The endpoint of the USGS M2M API to send the request to.
         payload: Json
             The payload with the data to send to the USGS M2M API.
+
+        Returns
+        -------
+        response: Json
+            The response from the request made to the `endpoint` converted to json.
         """
         if not isinstance(payload, str):
             raise TypeError(
