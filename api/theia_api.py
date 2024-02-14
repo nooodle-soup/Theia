@@ -1,12 +1,12 @@
 import os
-from typing import List
 import time
 from urllib.parse import urljoin
-
-from pydantic import BaseModel, Json, PrivateAttr
-
 import requests
 import logging
+
+from typing import List
+from pydantic import BaseModel, Json, PrivateAttr
+
 from api.data_types import (
     AcquisitionFilter,
     CloudCoverFilter,
@@ -124,6 +124,8 @@ class TheiaAPI(BaseModel):
 
         Notes
         -----
+        Logging out is not necessary but is strongly recommended after two
+        hours, as that is the Auth Token duration.
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#logout
         """
         self._logger.info("Logging Out")
@@ -134,7 +136,7 @@ class TheiaAPI(BaseModel):
 
         self._logger.info("Logged Out")
 
-    def search_scenes(self, search_params: SearchParams) -> Json:
+    def scene_search(self, search_params: SearchParams) -> Json:
         """
         Searches the scenes as per the paramaters passed in `search_params`.
 
