@@ -260,6 +260,33 @@ class SortCustomization(BaseDataModel):
 
 
 class SearchParams(BaseDataModel):
+    """
+    Search parameters used to build the filters.
+
+    Attributes
+    ----------
+    dataset: str
+        The name of the dataset to search.
+    longitude: Optional[float], default = None
+        The longitude of the point of interest.
+    latitude: Optional[float], default = None
+        The latitude of the point of interest.
+    bbox: Optional[List[Coordinate]], default = None
+        The bounding box of the area of interest.
+    max_cloud_cover: Optional[int], default = None
+        The maximum acceptable cloud cover.
+    min_cloud_cover: Optional[int], default = None
+        The minimum acceptable cloud cover.
+    start_date: Optional[str], default = None
+        The start date for temporal filtering. Must be ISO8601 formatted.
+    end_date: Optional[str], default = None
+        The end date for temporal filtering. Must be ISO8601 formatted.
+    months: Optional[List[int]], default = None
+        The months for seasonal filtering. Accepted values are 1 through 12.
+    max_results: Optional[int], default = 100
+        The maximum results to return for a search.
+    """
+
     dataset: str
     longitude: float | None = Field(default=None)
     latitude: float | None = Field(default=None)
