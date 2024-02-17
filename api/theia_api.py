@@ -53,7 +53,7 @@ class TheiaAPI(BaseModel):
         self._user = User(username=username, password=password)
         self.setup_logging()
         self.login()
-        self._logout_timer = threading.Timer(2*60*60, self._reset_login)
+        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
         self._logout_timer.start()
         if self._loggedIn:
             pass  # self._initDatasetDetails()
@@ -143,7 +143,7 @@ class TheiaAPI(BaseModel):
     def _reset_login(self) -> None:
         self.logout()
         self.login()
-        self._logout_timer = threading.Timer(2*60*60, self._reset_login)
+        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
         self._logout_timer.start()
 
     def scene_search(self, search_params: SearchParams) -> Json:
