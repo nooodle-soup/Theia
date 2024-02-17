@@ -449,3 +449,6 @@ class SceneSearch(BaseDataModel):
     orderListName: str | None = Field(default=None)
     excludeListName: str | None = Field(default=None)
     includeNullMetadataValues: bool | None = Field(default=None)
+
+class DatasetFilters(BaseDataModel):
+    datasetName: str
