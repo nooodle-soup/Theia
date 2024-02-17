@@ -57,16 +57,17 @@ class TheiaAPI(BaseModel):
         super().__init__()
         self._user = User(username=username, password=password)
         self._setup_logging()
+        self._logout_timer_manager(switch="start")
         self.login()
-        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
-        self._logout_timer.start()
         if self._loggedIn:
             pass  # self._initDatasetDetails()
 
     def __del__(self) -> None:
         """
-        Log the User out before destroying the `TheiaAPI` object.
+        Logs the User out and stops the login timer before destroying the 
+        `TheiaAPI` object.
         """
+        self._logout_timer_manager(switch="stop")
         self.logout()
 
     def login(self) -> None:
@@ -201,11 +202,31 @@ class TheiaAPI(BaseModel):
             for dataset in _datasetDetails
         ]
 
+    def _logout_timer_manager(self, switch: str="start") -> None:
+        """
+        Handles the logout timer initialization and cancellation.
+
+        Parameters
+        ----------
+        switch: {"start", "stop"}
+            Tells the manager what to do with the timer.
+        """
+        match switch:
+            case "start":
+                self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
+                self._logout_timer.start()
+            case "stop":
+                assert self._logout_timer is not None
+                self._logout_timer.cancel()
+
     def _reset_login(self) -> None:
+        """
+        Deals with logging out, resetting the timer, and logging in again after
+        the timer expires.
+        """
         self.logout()
+        self._logout_timer_manager(switch="start")
         self.login()
-        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
-        self._logout_timer.start()
 
     def _send_request_to_USGS(self, endpoint: str, payload: Json = "") -> Json:
         """
