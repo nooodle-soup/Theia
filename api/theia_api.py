@@ -2,6 +2,7 @@ import os
 import time
 from urllib.parse import urljoin
 import requests
+import threading
 import logging
 
 from typing import List
@@ -29,6 +30,7 @@ class TheiaAPI(BaseModel):
     _base_url: str = PrivateAttr(default=API_URL)
     _session: requests.sessions.Session = PrivateAttr(default_factory=requests.Session)
     _loggedIn: bool = PrivateAttr(default=False)
+    _logout_timer: threading.Timer | None = PrivateAttr(default=None)
     _user: User = PrivateAttr(default=None)
     datasetDetails: List[Dataset] | None = None
 
@@ -51,6 +53,8 @@ class TheiaAPI(BaseModel):
         self._user = User(username=username, password=password)
         self.setup_logging()
         self.login()
+        self._logout_timer = threading.Timer(2*60*60, self._reset_login)
+        self._logout_timer.start()
         if self._loggedIn:
             pass  # self._initDatasetDetails()
 
@@ -135,6 +139,12 @@ class TheiaAPI(BaseModel):
         self._loggedIn = False
 
         self._logger.info("Logged Out")
+
+    def _reset_login(self) -> None:
+        self.logout()
+        self.login()
+        self._logout_timer = threading.Timer(2*60*60, self._reset_login)
+        self._logout_timer.start()
 
     def scene_search(self, search_params: SearchParams) -> Json:
         """
