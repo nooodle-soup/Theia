@@ -1,12 +1,13 @@
 import os
 import time
-from urllib.parse import urljoin
 import requests
 import threading
 import logging
 
+from urllib.parse import urljoin
 from typing import List
 from pydantic import BaseModel, Json, PrivateAttr
+from requests import Response
 
 from api.data_types import (
     AcquisitionFilter,
@@ -19,8 +20,12 @@ from api.data_types import (
     SpatialFilterMbr,
     User,
 )
-from api.util import check_exceptions
-from api.errors import USGSRateLimitError
+from api.errors import (
+    USGSAuthenticationError,
+    USGSError,
+    USGSRateLimitError,
+    USGSUnauthorizedError,
+)
 
 API_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
 
@@ -51,52 +56,12 @@ class TheiaAPI(BaseModel):
         """
         super().__init__()
         self._user = User(username=username, password=password)
-        self.setup_logging()
+        self._setup_logging()
         self.login()
         self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
         self._logout_timer.start()
         if self._loggedIn:
             pass  # self._initDatasetDetails()
-
-    def setup_logging(self) -> None:
-        """
-        Sets up logging for the `TheiaAPI` object.
-        The log file is located in the directory where the code is run from.
-        """
-        self._logger.setLevel(logging.DEBUG)
-
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-
-        log_folder = "logs"
-        os.makedirs(log_folder, exist_ok=True)
-        log_file_path = os.path.join(log_folder, "theia_api.log")
-        file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(logging.DEBUG)
-
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        console_handler.setFormatter(formatter)
-        file_handler.setFormatter(formatter)
-
-        self._logger.addHandler(console_handler)
-        self._logger.addHandler(file_handler)
-
-    def _initDatasetDetails(self) -> None:
-        """
-        Requests and stores the datasets that are available to the user
-        accessing the USGS M2M API.
-        """
-        _datasetDetails = self.dataset_search().get("data")
-
-        self.datasetDetails = [
-            Dataset(
-                collectionName=dataset["collectionName"],
-                datasetAlias=dataset["datasetAlias"],
-            )
-            for dataset in _datasetDetails
-        ]
 
     def __del__(self) -> None:
         """
@@ -139,12 +104,6 @@ class TheiaAPI(BaseModel):
         self._loggedIn = False
 
         self._logger.info("Logged Out")
-
-    def _reset_login(self) -> None:
-        self.logout()
-        self.login()
-        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
-        self._logout_timer.start()
 
     def scene_search(self, search_params: SearchParams) -> Json:
         """
@@ -200,6 +159,54 @@ class TheiaAPI(BaseModel):
         self._logger.info("Dataset Details Retrieved")
         return response
 
+    def dataset_filters(self, dataset: str) -> Json:
+        """
+        Searches for the available metadata fields for the dataset images.
+
+        Parameters
+        ----------
+        dataset: str
+            The dataset to get the metadata fields for.
+
+        Returns
+        -------
+        response: Json
+            The response from the "dataset-filters" endpoint of the USGS M2M API.
+
+        Notes
+        -----
+        Reference: https://m2m.cr.usgs.gov/api/docs/reference/#dataset-filters
+        """
+        self._logger.info("Searching Metadata Filter Fields")
+
+        payload = {"datasetName": dataset}
+
+        response = self._send_request_to_USGS("dataset-filters", payload)
+
+        self._logger.info(f"Metadata Filter Fields Found For {dataset}")
+        return response
+
+    def _initDatasetDetails(self) -> None:
+        """
+        Requests and stores the datasets that are available to the user
+        accessing the USGS M2M API.
+        """
+        _datasetDetails = self.dataset_search().get("data")
+
+        self.datasetDetails = [
+            Dataset(
+                collectionName=dataset["collectionName"],
+                datasetAlias=dataset["datasetAlias"],
+            )
+            for dataset in _datasetDetails
+        ]
+
+    def _reset_login(self) -> None:
+        self.logout()
+        self.login()
+        self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
+        self._logout_timer.start()
+
     def _send_request_to_USGS(self, endpoint: str, payload: Json = "") -> Json:
         """
         Sends request to the USGS M2M API at the given endpoint with the given payload.
@@ -227,11 +234,11 @@ class TheiaAPI(BaseModel):
 
         try:
             response = self._session.post(url=request_url, data=payload, timeout=600)
-            check_exceptions(response)
+            self._check_exceptions(response)
         except USGSRateLimitError:
             time.sleep(3)
             response = self._session.post(url=request_url, data=payload)
-            check_exceptions(response)
+            self._check_exceptions(response)
 
         return response.json()
 
@@ -300,3 +307,44 @@ class TheiaAPI(BaseModel):
                 "Expected 'params' to be of type 'SearchParams',"
                 f" got {type(params)} instead"
             )
+
+    def _check_exceptions(self, response: Response):
+        data = response.json()
+        error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
+        msg = f"{error['code']}: {error['msg']}"
+
+        match error["code"]:
+            case "AUTH_INVALID" | "AUTH_KEY_INVALID":
+                raise USGSAuthenticationError(msg)
+            case "AUTH_UNAUTHORIZED":
+                raise USGSUnauthorizedError(msg)
+            case "RATE_LIMIT":
+                raise USGSRateLimitError(msg)
+            case _:
+                if error["code"] is not None:
+                    raise USGSError(msg)
+
+    def _setup_logging(self) -> None:
+        """
+        Sets up logging for the `TheiaAPI` object.
+        The log file is located in the directory where the code is run from.
+        """
+        self._logger.setLevel(logging.DEBUG)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+
+        log_folder = "logs"
+        os.makedirs(log_folder, exist_ok=True)
+        log_file_path = os.path.join(log_folder, "theia_api.log")
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setLevel(logging.DEBUG)
+
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        console_handler.setFormatter(formatter)
+        file_handler.setFormatter(formatter)
+
+        self._logger.addHandler(console_handler)
+        self._logger.addHandler(file_handler)
