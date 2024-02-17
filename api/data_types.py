@@ -10,6 +10,11 @@ class MetadataFilterType(Enum):
     BETWEEN = "between"
 
 
+class SpatialFilterType(Enum):
+    MBR = "mbr"
+    GEOJSON = "geoJson"
+
+
 class BaseDataModel(BaseModel):
     """
     Base class to be inherited by all data classes.
@@ -161,21 +166,78 @@ class MetadataValue(MetadataFilter):
     operand: str = Field(default="=")
 
 
-class SpatialFilterMbr(BaseDataModel):
-    # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterMbr
-    filterType: str = Field(default="mbr", frozen=True)
+class SpatialFilter(BaseDataModel):
+    """
+    Abstract class for filtering spatially.
+
+    Attributes
+    ----------
+    filterType: SpatialFilterType
+        The type of spatial filter.
+    """
+
+    filterType: SpatialFilterType
+
+
+class SpatialFilterMbr(SpatialFilter):
+    """
+    A class to apply spatial filter using mbr values on search.
+
+    Attributes
+    ----------
+    filterType: SpatialFilterType, default = 'mbr'
+        The type of spatial filter. Cannot be changed.
+    lowerLeft: Coordinate
+        Lower left coordinate for the mbr.
+    upperRight: Coordinate
+        Upper right coordinate for the mbr.
+
+    Notes
+    -----
+    Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterMbr
+    """
+
+    filterType: SpatialFilterType = Field(default="mbr", frozen=True)
     lowerLeft: Coordinate
     upperRight: Coordinate
 
 
-class SpatialFilterGeoJson(BaseDataModel):
-    # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterGeoJson
-    filterType: str = Field("geoJson", frozen=True)
+class SpatialFilterGeoJson(SpatialFilter):
+    """
+    A class to apply spatial filter using mbr values on search.
+
+    Attributes
+    ----------
+    filterType: SpatialFilterType, default = 'geoJson'
+        The type of spatial filter. Cannot be changed.
+    geoJson: GeoJson
+        GeoJson specifying the search region.
+
+    Notes
+    -----
+    Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterGeoJson
+    """
+
+    filterType: SpatialFilterType = Field("geoJson", frozen=True)
     geoJson: GeoJson
 
 
 class AcquisitionFilter(BaseDataModel):
-    # Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#acquisitionFilter
+    """
+    A class to filter search using the acquisition dates of the satellite image.
+
+    Attributes
+    ----------
+    start: str
+        ISO8601 date string
+    end: str
+        ISO8601 date string
+
+    Notes
+    -----
+    Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#acquisitionFilter
+    """
+
     start: str
     end: str
 
