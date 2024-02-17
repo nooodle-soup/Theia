@@ -190,6 +190,58 @@ class TheiaAPI(BaseModel):
         self._logger.info(f"Metadata Filter Fields Found For {dataset}")
         return response
 
+    def parse_scene_search_results(
+        self, response: Json
+    ) -> Tuple[DataFrame, DataFrame, DataFrame]:
+        """
+        Parses the response from the `scene_search` method.
+
+        Parameters
+        ----------
+        response: Json
+            The response from `scene_search`.
+
+        Returns
+        -------
+        metadata_df: DataFrame
+            The dataframe containing the metadata for each scene in the search
+            results.
+        browse_df: DataFrame
+            The dataframe containing the thumbnails for each scene in the search
+            results.
+        results_df: DataFrame
+            The dataframe containing all the data for each scene it the search
+            results except for metadata and browse.
+
+        Notes
+        -----
+        Each row of `metadata_df`, `browse_df` and `results_df` is for one
+        search result.
+        """
+        results = response.get("data").get("results")
+        metadata_list = []
+        browse_data_list = []
+
+        for result in results:
+            result_metadata = {}
+            for item in result["metadata"]:
+                result_metadata[item["fieldName"]] = item["value"]
+            metadata_list.append(result_metadata)
+
+            result_browse_data = {}
+            for item in result["browse"]:
+                key = item["browseName"]
+                result_browse_data[f"{key} Browse Path"] = item["browsePath"]
+                result_browse_data[f"{key} Thumbnail Path"] = item["thumbnailPath"]
+            browse_data_list.append(result_browse_data)
+
+        metadata_df = pd.DataFrame(metadata_list)
+        browse_df = pd.DataFrame(browse_data_list)
+        results_df = pd.DataFrame(results)
+        results_df.drop(["browse", "metadata"], axis=1, inplace=True)
+
+        return (metadata_df, browse_df, results_df)
+
     def _initDatasetDetails(self) -> None:
         """
         Requests and stores the datasets that are available to the user
@@ -331,58 +383,6 @@ class TheiaAPI(BaseModel):
                 "Expected 'params' to be of type 'SearchParams',"
                 f" got {type(params)} instead"
             )
-
-    def _parse_scene_search_results(
-        self, response: Json
-    ) -> Tuple[DataFrame, DataFrame, DataFrame]:
-        """
-        Parses the response from the `scene_search` method.
-
-        Parameters
-        ----------
-        response: Json
-            The response from `scene_search`.
-
-        Returns
-        -------
-        metadata_df: DataFrame
-            The dataframe containing the metadata for each scene in the search
-            results.
-        browse_df: DataFrame
-            The dataframe containing the thumbnails for each scene in the search
-            results.
-        results_df: DataFrame
-            The dataframe containing all the data for each scene it the search
-            results except for metadata and browse.
-
-        Notes
-        -----
-        Each row of `metadata_df`, `browse_df` and `results_df` is for one
-        search result.
-        """
-        results = response.get("data").get("results")
-        metadata_list = []
-        browse_data_list = []
-
-        for result in results:
-            result_metadata = {}
-            for item in result["metadata"]:
-                result_metadata[item["fieldName"]] = item["value"]
-            metadata_list.append(result_metadata)
-
-            result_browse_data = {}
-            for item in result["browse"]:
-                key = item["browseName"]
-                result_browse_data[f"{key} Browse Path"] = item["browsePath"]
-                result_browse_data[f"{key} Thumbnail Path"] = item["thumbnailPath"]
-            browse_data_list.append(result_browse_data)
-
-        metadata_df = pd.DataFrame(metadata_list)
-        browse_df = pd.DataFrame(browse_data_list)
-        results_df = pd.DataFrame(results)
-        results_df.drop(["browse", "metadata"], axis=1, inplace=True)
-
-        return (metadata_df, browse_df, results_df)
 
     def _check_exceptions(self, response: Response) -> None:
         """
