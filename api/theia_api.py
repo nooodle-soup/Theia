@@ -14,6 +14,7 @@ from api.data_types import (
     CloudCoverFilter,
     Coordinate,
     Dataset,
+    DatasetFilters,
     SceneFilter,
     SceneSearch,
     SearchParams,
@@ -180,9 +181,9 @@ class TheiaAPI(BaseModel):
         """
         self._logger.info("Searching Metadata Filter Fields")
 
-        payload = {"datasetName": dataset}
+        payload = DatasetFilters(datasetName=dataset)
 
-        response = self._send_request_to_USGS("dataset-filters", payload)
+        response = self._send_request_to_USGS("dataset-filters", payload.to_json())
 
         self._logger.info(f"Metadata Filter Fields Found For {dataset}")
         return response
@@ -329,7 +330,19 @@ class TheiaAPI(BaseModel):
                 f" got {type(params)} instead"
             )
 
-    def _check_exceptions(self, response: Response):
+    def _check_exceptions(self, response: Response) -> None:
+        """
+        Utility method to check for exceptions in responses.
+
+        Parameters
+        ----------
+        response: Response
+            A requests.Response class object to check for exceptions.
+
+        Raises
+        ------
+        #####################TODO##############################
+        """
         data = response.json()
         error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
         msg = f"{error['code']}: {error['msg']}"
