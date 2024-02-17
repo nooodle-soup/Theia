@@ -3,11 +3,13 @@ import time
 import requests
 import threading
 import logging
+import pandas as pd
 
 from urllib.parse import urljoin
 from typing import List
 from pydantic import BaseModel, Json, PrivateAttr
 from requests import Response
+from pandas import DataFrame
 
 from api.data_types import (
     AcquisitionFilter,
@@ -65,7 +67,7 @@ class TheiaAPI(BaseModel):
 
     def __del__(self) -> None:
         """
-        Logs the User out and stops the login timer before destroying the 
+        Logs the User out and stops the login timer before destroying the
         `TheiaAPI` object.
         """
         self._logout_timer_manager(switch="stop")
@@ -203,7 +205,7 @@ class TheiaAPI(BaseModel):
             for dataset in _datasetDetails
         ]
 
-    def _logout_timer_manager(self, switch: str="start") -> None:
+    def _logout_timer_manager(self, switch: str = "start") -> None:
         """
         Handles the logout timer initialization and cancellation.
 
@@ -329,6 +331,18 @@ class TheiaAPI(BaseModel):
                 "Expected 'params' to be of type 'SearchParams',"
                 f" got {type(params)} instead"
             )
+
+    def _parse_scene_search_results(self, response: Json) -> DataFrame:
+        results = response.get("data").get("results")
+        metadata_list = []
+
+        for result in results:
+            result_metadata = {}
+            for item in result["metadata"]:
+                result_metadata[item["fieldName"]] = item["value"]
+            metadata_list.append(result_metadata)
+
+        return pd.DataFrame(metadata_list)
 
     def _check_exceptions(self, response: Response) -> None:
         """
