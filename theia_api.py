@@ -245,6 +245,20 @@ class TheiaAPI(BaseModel):
 
         return (metadata_df, browse_df, results_df)
 
+    def permissions(self) -> Json:
+        """
+        Shows the permissions available for the `User` currently logged in 
+        to the USGS M2M API.
+
+        Returns
+        -------
+        response: Json
+            The response from the "permissions" endpoint of the M2M API.
+        """
+        response = self._send_request_to_USGS("permissions")
+
+        return response
+
     def _initDatasetDetails(self) -> None:
         """
         Requests and stores the datasets that are available to the user
