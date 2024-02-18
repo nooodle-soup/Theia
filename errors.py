@@ -4,8 +4,10 @@
 class TheiaError(Exception):
     pass
 
+
 class TheiaCredentialsError(Exception):
     pass
+
 
 # General Exceptions
 
