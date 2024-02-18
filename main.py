@@ -1,5 +1,6 @@
 from typing import Optional
 from dotenv import dotenv_values
+from pydantic import validate_call
 from errors import TheiaCredentialsError
 
 from theia_api import TheiaAPI
@@ -10,6 +11,7 @@ config = {
 }
 
 
+@validate_call(validate_return=True)
 def get_api(username: Optional[str] = None, password: Optional[str] = None) -> TheiaAPI:
     """
     Creates a `TheiaAPI` object and returns it.
@@ -21,7 +23,7 @@ def get_api(username: Optional[str] = None, password: Optional[str] = None) -> T
     password: Optional[str]
         The password of the user's USGS account.
 
-    Returns 
+    Returns
     -------
     api: TheiaAPI
         A `TheiaAPI` object created with the user's credentials.
@@ -47,5 +49,17 @@ def get_api(username: Optional[str] = None, password: Optional[str] = None) -> T
     api = TheiaAPI(username=config["USERNAME"], password=config["PASSWORD"])
     return api
 
-def set_credentials(username: str, password: str):
+
+@validate_call(validate_return=True)
+def set_credentials(username: str, password: str) -> None:
+    """
+    Sets user credentials in the config file.
+
+    Parameters
+    ----------
+    username: str
+        The username of the user's USGS account.
+    password: str
+        The password of the user's USGS account.
+    """
     pass
