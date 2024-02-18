@@ -11,7 +11,7 @@ from pydantic import BaseModel, Json, PrivateAttr
 from requests import Response
 from pandas import DataFrame
 
-from api.data_types import (
+from data_types import (
     AcquisitionFilter,
     CloudCoverFilter,
     Coordinate,
@@ -23,7 +23,7 @@ from api.data_types import (
     SpatialFilterMbr,
     User,
 )
-from api.errors import (
+from errors import (
     USGSAuthenticationError,
     USGSError,
     USGSRateLimitError,
@@ -83,6 +83,9 @@ class TheiaAPI(BaseModel):
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#login-app-guest
         """
+        if self._loggedIn:
+            self.logout()
+
         self._logger.info("Logging In")
 
         response = self._send_request_to_USGS("login", self._user.to_json())
