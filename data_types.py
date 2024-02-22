@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator
 from typing import List, Union
 
 
@@ -15,11 +15,18 @@ class SpatialFilterType(Enum):
     GEOJSON = "geoJson"
 
 
+class SceneIdentifier(Enum):
+    ENTITYID = "entityId"
+    DISPLAYID = "displayId"
+
+
 class BaseDataModel(BaseModel):
     """
     Base class to be inherited by all data classes.
     Contains methods to make conversion to json convenient.
     """
+
+    model_config = ConfigDict(use_enum_values=True)
 
     def to_json(self):
         return self.model_dump_json(exclude_none=True)
@@ -160,7 +167,9 @@ class MetadataValue(MetadataFilter):
     Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#metadataValue
     """
 
-    filterType: MetadataFilterType = Field(default="value", frozen=True)
+    filterType: MetadataFilterType = Field(
+        default=MetadataFilterType.VALUE, frozen=True, validate_default=True
+    )
     filterId: str
     value: Union[str, float, int]
     operand: str = Field(default="=")
@@ -197,7 +206,9 @@ class SpatialFilterMbr(SpatialFilter):
     Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterMbr
     """
 
-    filterType: SpatialFilterType = Field(default="mbr", frozen=True)
+    filterType: SpatialFilterType = Field(
+        default=SpatialFilterType.MBR, frozen=True, validate_default=True
+    )
     lowerLeft: Coordinate
     upperRight: Coordinate
 
@@ -218,7 +229,9 @@ class SpatialFilterGeoJson(SpatialFilter):
     Reference: https://m2m.cr.usgs.gov/api/docs/datatypes/#spatialFilterGeoJson
     """
 
-    filterType: SpatialFilterType = Field("geoJson", frozen=True)
+    filterType: SpatialFilterType = Field(
+        SpatialFilterType.GEOJSON, frozen=True, validate_default=True
+    )
     geoJson: GeoJson
 
 
@@ -286,6 +299,7 @@ class DateRange(BaseDataModel):
 
 class SceneFilter(BaseDataModel):
     """
+    The scene filter to be applied during scene search.
 
     Attributes
     ----------
@@ -452,4 +466,34 @@ class SceneSearch(BaseDataModel):
 
 
 class DatasetFilters(BaseDataModel):
+    """
+    A class representing the json payload sent to "dataset-filters" endpoint
+    to get the metadata filters of a dataset.
+
+    Attributes
+    ----------
     datasetName: str
+        The name of the dataset.
+    """
+
+    datasetName: str
+
+
+class SceneList(BaseDataModel):
+    listId: str
+
+
+class SceneListAdd(SceneList):
+    datasetName: str
+    idField: SceneIdentifier = Field(
+        default=SceneIdentifier.ENTITYID, validate_default=True
+    )
+    entityId: str | None = None
+    entityIds: List[str] | None = None
+    timeToLive: str | None = None
+    checkDownloadRestriction: bool | None = None
+
+class SceneListRemove(SceneList):
+    datasetName: str | None = None
+    entityId: str | None = None
+    entityIds: List[str] | None = None
