@@ -7,7 +7,7 @@ import pandas as pd
 
 from urllib.parse import urljoin
 from typing import List, Tuple
-from pydantic import BaseModel, Json, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Json, PrivateAttr
 from requests import Response
 from pandas import DataFrame
 
@@ -41,9 +41,7 @@ class TheiaAPI(BaseModel):
     _logout_timer: threading.Timer | None = PrivateAttr(default=None)
     _user: User = PrivateAttr(default=None)
     datasetDetails: List[Dataset] | None = None
-
-    class Config:
-        arbitrary_types_allowed = True
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, username: str, password: str) -> None:
         """
@@ -247,7 +245,7 @@ class TheiaAPI(BaseModel):
 
     def permissions(self) -> Json:
         """
-        Shows the permissions available for the `User` currently logged in 
+        Shows the permissions available for the `User` currently logged in
         to the USGS M2M API.
 
         Returns
@@ -258,6 +256,9 @@ class TheiaAPI(BaseModel):
         response = self._send_request_to_USGS("permissions")
 
         return response
+
+    def scene_list_add(self, payload):
+        pass
 
     def _initDatasetDetails(self) -> None:
         """
