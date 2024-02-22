@@ -3,7 +3,7 @@ from dotenv import dotenv_values
 from pydantic import validate_call
 from errors import TheiaCredentialsError
 
-from theia_api import TheiaAPI
+from api import TheiaAPI
 
 config = {
     **dotenv_values(".env.shared"),  # load shared development variables
