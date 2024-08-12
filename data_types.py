@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel, ConfigDict, Field, validator
+from pydantic import BaseModel, ConfigDict, Field, validator, root_validator
 from typing import List, Union
 
 
@@ -493,7 +493,50 @@ class SceneListAdd(SceneList):
     timeToLive: str | None = None
     checkDownloadRestriction: bool | None = None
 
+    @root_validator(skip_on_failure=True)
+    def check_entity_fields(cls, values):
+        entity_id = values.get("entityId")
+        entity_ids = values.get("entityIds")
+
+        if entity_id and entity_ids:
+            raise ValueError(
+                "Only one of 'entityId' or 'entityIds' should be provided, not both."
+            )
+
+        if not entity_id and not entity_ids:
+            raise ValueError("Either 'entityId' or 'entityIds' must be provided.")
+
+        return values
+
+
 class SceneListRemove(SceneList):
     datasetName: str | None = None
     entityId: str | None = None
     entityIds: List[str] | None = None
+
+
+class DownloadOptions(BaseDataModel):
+    """
+    Data class for the download-options request in the USGS M2M API.
+
+    Attributes
+    ----------
+    datasetName : str
+        Dataset alias.
+    entityIds : List[str], optional
+        List of scene IDs.
+    listId : str
+        Used to identify the list of scenes to use.
+    includeSecondaryFileGroups : bool, optional
+        Optional parameter to return file group IDs with secondary products.
+    """
+
+    datasetName: str = Field(..., description="Dataset alias.")
+    entityIds: List[str] | None = Field(None, description="List of scene IDs.")
+    listId: str | None = Field(
+        None, description="Used to identify the list of scenes to use."
+    )
+    includeSecondaryFileGroups: bool | None = Field(
+        True,
+        description="Optional parameter to return file group IDs with secondary products.",
+    )

@@ -37,6 +37,15 @@ class USGSVersionUnknownError(Exception):
     pass
 """
 
+
+class USGSDatasetAuthError(Exception):
+    """
+    Dataset Authentication Unavailable to User
+    """
+
+    pass
+
+
 # Authentication Exceptions
 
 

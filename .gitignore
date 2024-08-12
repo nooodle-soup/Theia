@@ -1,3 +1,6 @@
 .env.secret
 **/__pycache__
 **/logs
+**/downloads
+./test_download.py
+./test_scene_list_add.py

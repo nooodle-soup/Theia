@@ -4,6 +4,9 @@ import requests
 import threading
 import logging
 import pandas as pd
+import datetime
+import json
+import re
 
 from urllib.parse import urljoin
 from typing import List, Tuple
@@ -17,10 +20,13 @@ from data_types import (
     Coordinate,
     Dataset,
     DatasetFilters,
+    DownloadOptions,
     SceneFilter,
     SceneSearch,
     SearchParams,
+    SceneListAdd,
     SpatialFilterMbr,
+    SceneIdentifier,
     User,
 )
 from errors import (
@@ -28,9 +34,13 @@ from errors import (
     USGSError,
     USGSRateLimitError,
     USGSUnauthorizedError,
+    USGSDatasetAuthError,
 )
 
 API_URL = "https://m2m.cr.usgs.gov/api/api/json/stable/"
+MAX_THREADS = 5
+
+_sema: threading.Semaphore = threading.Semaphore(value=MAX_THREADS)
 
 
 class TheiaAPI(BaseModel):
@@ -40,13 +50,14 @@ class TheiaAPI(BaseModel):
     _loggedIn: bool = PrivateAttr(default=False)
     _logout_timer: threading.Timer | None = PrivateAttr(default=None)
     _user: User = PrivateAttr(default=None)
+    _threads: List[threading.Thread] = []
     datasetDetails: List[Dataset] | None = None
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def __init__(self, username: str, password: str) -> None:
         """
         Sets up `User` details and logging for the api object.
-        Logs the user in and gets availabel dataset details.
+        Logs the user in and gets available dataset details.
 
         Parameters
         ----------
@@ -112,7 +123,7 @@ class TheiaAPI(BaseModel):
 
     def scene_search(self, search_params: SearchParams) -> Json:
         """
-        Searches the scenes as per the paramaters passed in `search_params`.
+        Searches the scenes as per the parameters passed in `search_params`.
 
         Parameters
         ----------
@@ -137,7 +148,8 @@ class TheiaAPI(BaseModel):
         )
 
         self._logger.info("Searching Scenes")
-        self._logger.debug(f"Searching scenes with params {payload.to_pretty_json()}")
+        self._logger.debug(f"Searching scenes with params {
+                           payload.to_pretty_json()}")
 
         response = self._send_request_to_USGS("scene-search", payload=payload.to_json())
 
@@ -211,12 +223,12 @@ class TheiaAPI(BaseModel):
             The dataframe containing the thumbnails for each scene in the search
             results.
         results_df: DataFrame
-            The dataframe containing all the data for each scene it the search
+            The dataframe containing all the data for each scene in the search
             results except for metadata and browse.
 
         Notes
         -----
-        Each row of `metadata_df`, `browse_df` and `results_df` is for one
+        Each row of `metadata_df`, `browse_df`, and `results_df` is for one
         search result.
         """
         results = response.get("data").get("results")
@@ -233,7 +245,10 @@ class TheiaAPI(BaseModel):
             for item in result["browse"]:
                 key = item["browseName"]
                 result_browse_data[f"{key} Browse Path"] = item["browsePath"]
-                result_browse_data[f"{key} Thumbnail Path"] = item["thumbnailPath"]
+                result_browse_data[
+                    f"{
+                        key} Thumbnail Path"
+                ] = item["thumbnailPath"]
             browse_data_list.append(result_browse_data)
 
         metadata_df = pd.DataFrame(metadata_list)
@@ -257,8 +272,252 @@ class TheiaAPI(BaseModel):
 
         return response
 
-    def scene_list_add(self, payload):
-        pass
+    def download_scene(
+        self,
+        dataset_name: str,
+        path: str,
+        scene_id: str = None,
+        scene_ids: List[str] = None,
+        list_id: str | None = "",
+        includeSecondaryFileGroups: bool | None = False,
+    ) -> None:
+        """
+        Downloads the scenes specified by the scene_ids or scene_id.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        path : str
+            The directory where downloaded files will be saved.
+        scene_ids : List[str]
+            A list of scene IDs to download.
+        max_threads : int, default=5
+            Maximum number of threads for concurrent downloads.
+        list_id : str, default=""
+            The ID of the scene list.
+
+        Notes
+        -----
+        The method manages the download process using threading for efficiency.
+        """
+
+        payload = DownloadOptions(
+            datasetName=dataset_name,
+            listId=list_id,
+            entityIds=scene_ids,
+            includeSecondaryFileGroups=True if includeSecondaryFileGroups else False,
+        )
+
+        downloads = []
+
+        try:
+            self._logger.info("Retrieving download options...")
+            download_options = self._send_request_to_USGS(
+                endpoint="download-options",
+                payload=payload.to_json(),
+            )["data"]
+            downloads = [
+                {"entityId": product["entityId"], "productId": product["id"]}
+                for product in download_options
+                if product["available"]
+            ]
+        except USGSDatasetAuthError as e:
+            self._logger.error(f"Unable to retrieve download options: {e}")
+
+        if downloads:
+            requested_download_count = len(downloads)
+
+            self._logger.info("Requesting downloads...")
+
+            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            payload = {"downloads": downloads, "label": label}
+
+            request_results = self._send_request_to_USGS(
+                endpoint="download-request",
+                payload=json.dumps(payload),
+            )
+            request_results = request_results["data"]
+
+            if request_results.get("preparingDownloads"):
+                more_download_urls = self._send_request_to_USGS(
+                    endpoint="download-retrieve",
+                    payload=json.dumps({"label": label}),
+                )
+                more_download_urls = more_download_urls["data"]
+
+                self._manage_downloads(
+                    more_download_urls,
+                    request_results,
+                    path,
+                    requested_download_count,
+                )
+            else:
+                for download in request_results["availableDownloads"]:
+                    self._run_download(download["url"], path)
+
+            self._logger.info("Downloading Files...")
+            for thread in self._threads:
+                thread.join()
+            self._threads.clear()
+        else:
+            self._logger.info("No available products for download.")
+
+    def _manage_downloads(
+        self,
+        download_urls: dict,
+        request_results: dict,
+        path: str,
+        requested_download_count: int,
+    ) -> None:
+        """
+        Manages the download process, handling retries and threading.
+
+        Parameters
+        ----------
+        download_urls : dict
+            URLs for available downloads.
+        request_results : dict
+            Results from the download request.
+        path : str
+            The directory where downloaded files will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+        requested_download_count : int
+            The total number of downloads requested.
+
+        Notes
+        -----
+        This method manages retries for downloads that are not immediately available.
+        """
+        download_ids = []
+
+        for download in download_urls.get("available", []):
+            if (
+                str(download["downloadId"]) in request_results["newRecords"]
+                or str(download["downloadId"]) in request_results["duplicateProducts"]
+            ):
+                download_ids.append(download["downloadId"])
+                self._run_download(download["url"], path)
+
+        for download in download_urls.get("requested", []):
+            if (
+                str(download["downloadId"]) in request_results["newRecords"]
+                or str(download["downloadId"]) in request_results["duplicateProducts"]
+            ):
+                download_ids.append(download["downloadId"])
+                self._run_download(download["url"], path)
+
+        while len(download_ids) < (
+            requested_download_count - len(request_results["failed"])
+        ):
+            preparingDownloads = (
+                requested_download_count
+                - len(download_ids)
+                - len(request_results["failed"])
+            )
+            self._logger.info(
+                f"{preparingDownloads} downloads are not available. Waiting for 30 seconds.",
+            )
+            time.sleep(30)
+            self._logger.info("Trying to retrieve data...")
+
+            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            payload = {"label": label}
+            moreDownloadUrls = self._send_request_to_USGS("download-retrieve", payload)
+            for download in moreDownloadUrls["available"]:
+                if download["downloadId"] not in download_ids and (
+                    str(download["downloadId"]) in request_results["newRecords"]
+                    or str(download["downloadId"])
+                    in request_results["duplicateProducts"]
+                ):
+                    download_ids.append(download["downloadId"])
+                    self._run_download(download["url"], path)
+
+    def _run_download(
+        self,
+        url: str,
+        path: str,
+    ) -> None:
+        """
+        Starts a new thread to handle a file download.
+
+        Parameters
+        ----------
+        url : str
+            The URL of the file to download.
+        path : str
+            The directory where the file will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+        """
+        thread = threading.Thread(target=self._download_file, args=(url, path))
+        self._threads.append(thread)
+        thread.start()
+
+    def _download_file(self, url: str, path: str) -> None:
+        """
+        Downloads a file from the specified URL.
+
+        Parameters
+        ----------
+        url : str
+            The URL of the file to download.
+        path : str
+            The directory where the file will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+
+        Notes
+        -----
+        This method handles the actual download of the file and saves it to disk.
+        """
+        _sema.acquire()
+        try:
+            response = requests.get(url, stream=True)
+            disposition = response.headers.get("content-disposition")
+            if disposition:
+                filename = re.findall("filename=(.+)", disposition)[0].strip('"')
+                self._logger.info(f"Downloading {filename}...")
+                with open(os.path.join(path, filename), "wb") as f:
+                    f.write(response.content)
+                self._logger.info(f"Downloaded {filename}.")
+        except Exception as e:
+            self._logger.error(f"Failed to download from {url}. error: {e}")
+        finally:
+            _sema.release()
+            self._logger.info("Sema released...")
+
+    def scene_list_add(
+        self, dataset_name: str, scene_ids: List[str], list_id: str
+    ) -> Json:
+        """
+        Adds scenes to a scene list.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        scene_ids : List[str]
+            A list of scene IDs to be added to the list.
+        list_id : str
+            The ID of the scene list to add scenes to.
+
+        Returns
+        -------
+        response : Json
+            The response from the "scene-list-add" endpoint of the USGS M2M API.
+        """
+        self._logger.info("Adding scenes to the scene list...")
+
+        payload = SceneListAdd(
+            datasetName=dataset_name, entityIds=scene_ids, listId=list_id
+        ).to_json()
+
+        response = self._send_request_to_USGS("scene-list-add", payload)
+
+        self._logger.info("Scenes successfully added to the list...")
+        return response
 
     def _initDatasetDetails(self) -> None:
         """
@@ -316,6 +575,17 @@ class TheiaAPI(BaseModel):
         -------
         response: Json
             The response from the request made to the `endpoint` converted to json.
+
+        Raises
+        ------
+        TypeError
+            If the payload is not a string.
+        USGSRateLimitError
+            If the request is rate-limited by the USGS M2M API.
+
+        Notes
+        -----
+        This method includes error handling for various HTTP status codes and USGS-specific errors.
         """
         if not isinstance(payload, str):
             raise TypeError(
@@ -349,6 +619,15 @@ class TheiaAPI(BaseModel):
         -------
         scene_filter: SceneFilter
             The generated scene filter.
+
+        Raises
+        ------
+        TypeError
+            If the `params` argument is not an instance of `SearchParams`.
+
+        Notes
+        -----
+        This method converts the search parameters into a format suitable for the USGS M2M API.
         """
         if isinstance(params, SearchParams):
             filter_dict = {}
@@ -413,7 +692,20 @@ class TheiaAPI(BaseModel):
 
         Raises
         ------
-        #####################TODO##############################
+        USGSAuthenticationError
+            If the response contains an authentication error.
+        USGSUnauthorizedError
+            If the response indicates the user is unauthorized.
+        USGSRateLimitError
+            If the response indicates the user has hit the rate limit.
+        USGSDatasetAuthError
+            If the response indicates a dataset authorization error.
+        USGSError
+            For all other errors not specifically handled.
+
+        Notes
+        -----
+        This method inspects the response from the USGS M2M API and raises appropriate exceptions.
         """
         data = response.json()
         error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
@@ -426,6 +718,8 @@ class TheiaAPI(BaseModel):
                 raise USGSUnauthorizedError(msg)
             case "RATE_LIMIT":
                 raise USGSRateLimitError(msg)
+            case "DATASET_AUTH":
+                raise USGSDatasetAuthError(msg)
             case _:
                 if error["code"] is not None:
                     raise USGSError(msg)
@@ -433,6 +727,9 @@ class TheiaAPI(BaseModel):
     def _setup_logging(self) -> None:
         """
         Sets up logging for the `TheiaAPI` object.
+
+        Notes
+        -----
         The log file is located in the directory where the code is run from.
         """
         self._logger.setLevel(logging.DEBUG)
@@ -454,3 +751,4 @@ class TheiaAPI(BaseModel):
 
         self._logger.addHandler(console_handler)
         self._logger.addHandler(file_handler)
+        self._logger.info("------------")
