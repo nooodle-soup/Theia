@@ -1,4 +1,5 @@
 import os
+import sys
 from api import TheiaAPI
 
 
@@ -43,3 +44,4 @@ def test_download():
 
 if __name__ == "__main__":
     test_download()
+    print("here")
