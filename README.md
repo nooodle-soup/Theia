@@ -13,51 +13,51 @@ TheiaAPI is a Python wrapper for the USGS Machine-to-Machine (M2M) API, providin
 ## Installation
 To install TheiaAPI, clone the repository and ensure you have the necessary dependencies installed:
 
-'''bash
+```bash
 git clone https://github.com/yourusername/theia-api.git
 cd theia-api
 pip install -r requirements.txt
-'''
+```
 
 ## Usage
 # Initialize the API
-'''python
+```python
 from theia_api import TheiaAPI
 
-api = TheiaAPI(username='your_username', password='your_password')
-'''
+api = TheiaAPI(username=`your_username`, password=`your_password`)
+```
 
 # Search for Scenes
-'''python
+```python
 search_params = SearchParams(
-    dataset='LANDSAT_8',
+    dataset=`LANDSAT_8`,
     bbox=[Coordinate(latitude=40.7128, longitude=-74.0060), Coordinate(latitude=40.7306, longitude=-73.9352)],
-    start_date='2020-01-01',
-    end_date='2020-12-31',
+    start_date=`2020-01-01`,
+    end_date=`2020-12-31`,
     max_results=10
 )
 response = api.scene_search(search_params)
-'''
+```
 
 # Download Scenes
-'''python
+```python
 api.download_scene(
-    dataset_name='LANDSAT_8',
-    path='./downloads',
-    scene_ids=['LC08_L1TP_011029_20200414_20200414_01_RT']
+    dataset_name=`LANDSAT_8`,
+    path=`./downloads`,
+    scene_ids=[`LC08_L1TP_011029_20200414_20200414_01_RT`]
 )
-'''
+```
 
 # View Permissions
-'''python
+```python
 permissions = api.permissions()
 print(permissions)
-'''
+```
 
 # Logging Out
-'''python
+```python
 api.logout()
-'''
+```
 
 ## Notes
 The download functionality supports multiple concurrent downloads using threading, 
