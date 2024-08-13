@@ -360,6 +360,7 @@ class TheiaAPI(BaseModel):
             for thread in self._threads:
                 thread.join()
             self._threads.clear()
+            self._logger.info("All Downloads Complete...")
         else:
             self._logger.info("No available products for download.")
 
@@ -546,6 +547,7 @@ class TheiaAPI(BaseModel):
         match switch:
             case "start":
                 self._logout_timer = threading.Timer(2 * 60 * 60, self._reset_login)
+                self._logout_timer.daemon = True
                 self._logout_timer.start()
             case "stop":
                 assert self._logout_timer is not None
