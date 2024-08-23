@@ -1,6 +1,6 @@
 import os
 import sys
-from api import TheiaAPI
+from theia.api import TheiaAPI
 
 
 def test_download():

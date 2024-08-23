@@ -19,14 +19,18 @@ from data_types import (
     CloudCoverFilter,
     Coordinate,
     Dataset,
-    DatasetFilters,
-    DownloadOptions,
     SceneFilter,
-    SceneSearch,
-    SearchParams,
     SceneListAdd,
     SpatialFilterMbr,
-    SceneIdentifier,
+)
+from endpoint_types import (
+    DatasetFiltersPayload,
+    DataOwnerPayload,
+    DownloadOptionsPayload,
+    SearchParamsPayload,
+    SceneSearchPayload,
+)
+from util_types import (
     User,
 )
 from errors import (
@@ -57,6 +61,7 @@ class TheiaAPI(BaseModel):
     def __init__(self, username: str, password: str) -> None:
         """
         Sets up `User` details and logging for the api object.
+
         Logs the user in and gets available dataset details.
 
         Parameters
@@ -71,8 +76,6 @@ class TheiaAPI(BaseModel):
         self._setup_logging()
         self._logout_timer_manager(switch="start")
         self.login()
-        if self._loggedIn:
-            pass  # self._initDatasetDetails()
 
     def __del__(self) -> None:
         """
@@ -98,10 +101,10 @@ class TheiaAPI(BaseModel):
         self._logger.info("Logging In")
 
         response = self._send_request_to_USGS("login", self._user.to_json())
+        response = response.json()
         self._session.headers["X-Auth-Token"] = response.get("data")
         self._loggedIn = True
-
-        self._logger.info("Logged In")
+        self._logger.info("Logged in successfully")
 
     def logout(self) -> None:
         """
@@ -121,40 +124,74 @@ class TheiaAPI(BaseModel):
 
         self._logger.info("Logged Out")
 
-    def scene_search(self, search_params: SearchParams) -> Json:
+    def data_owner(self, payload: DataOwnerPayload) -> Json:
+        self._logger.info("Searching Data Owner")
+        self._logger.debug(f"DataOwner Payload : {payload.to_pretty_json()}")
+        response = self._send_request_to_USGS("data-owner", payload=payload.to_json())
+        self._logger.info("Data Owner Found Successfully")
+
+        return response.json()
+
+    def dataset(self, payload: DatasetPayload) -> Json:
+        self._logger.info("Searching Data Owner")
+        self._logger.debug(f"DataOwner Payload : {payload.to_pretty_json()}")
+        response = self._send_request_to_USGS("data-owner", payload=payload.to_json())
+        self._logger.info("Data Owner Found Successfully")
+
+        return response.json()
+
+    def scene_search(self, payload: SceneSearchPayload) -> Json:
         """
-        Searches the scenes as per the parameters passed in `search_params`.
+        Searches the scenes as per the parameters passed in SceneSearch payload.
 
         Parameters
         ----------
-        search_params: SearchParams
-            A SearchParams class object containing parameters to be used in
+        payload: SceneSearch
+            A SceneSearch class object containing parameters to be used in
             search.
 
         Returns
         -------
-        response: requests.Response
+        response: Json
             The response from the "scene-search" endpoint of the USGS M2M API.
+            Returns an empty response if there is an error.
 
         Notes
         -----
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#scene-search
         """
-        scene_filter = self._generate_scene_filter(search_params)
-        payload = SceneSearch(
-            datasetName=search_params.dataset,
-            sceneFilter=scene_filter,
-            maxResults=search_params.max_results,
-        )
 
         self._logger.info("Searching Scenes")
-        self._logger.debug(f"Searching scenes with params {
-                           payload.to_pretty_json()}")
-
+        self._logger.debug(f"Payload: {payload.to_pretty_json()}")
         response = self._send_request_to_USGS("scene-search", payload=payload.to_json())
-
         self._logger.info("Scene Search Successful")
-        return response
+
+        return response.json()
+
+    def scene_list_add(self, payload: SceneListAddPayload) -> Json:
+        """
+        Adds scenes to a scene list.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        scene_ids : List[str]
+            A list of scene IDs to be added to the list.
+        list_id : str
+            The ID of the scene list to add scenes to.
+
+        Returns
+        -------
+        response : requests.Response
+            The response from the "scene-list-add" endpoint of the USGS M2M API.
+        """
+        self._logger.info("Adding scenes to the scene list...")
+        self._logger.debug(f"Payload : {payload.to_pretty_json()}")
+        response = self._send_request_to_USGS("scene-list-add", payload.to_json())
+        self._logger.info("Scenes successfully added to the list...")
+
+        return response.json()
 
     def dataset_search(self) -> Json:
         """
@@ -170,20 +207,19 @@ class TheiaAPI(BaseModel):
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#dataset-search
         """
         self._logger.info("Searching Datasets")
-
         response = self._send_request_to_USGS("dataset-search")
-
         self._logger.info("Dataset Details Retrieved")
-        return response
 
-    def dataset_filters(self, dataset: str) -> Json:
+        return response.json()
+
+    def dataset_filters(self, payload: DatasetFiltersPayload) -> Json:
         """
         Searches for the available metadata fields for the dataset images.
 
         Parameters
         ----------
-        dataset: str
-            The dataset to get the metadata fields for.
+        payload: DatasetFilters
+            The dataset filters to pass as the payload.
 
         Returns
         -------
@@ -195,13 +231,35 @@ class TheiaAPI(BaseModel):
         Reference: https://m2m.cr.usgs.gov/api/docs/reference/#dataset-filters
         """
         self._logger.info("Searching Metadata Filter Fields")
-
-        payload = DatasetFilters(datasetName=dataset)
-
+        self._logger.debug(f"Payload : {payload.to_pretty_json()}")
         response = self._send_request_to_USGS("dataset-filters", payload.to_json())
+        self._logger.info("Metadata Filter Fields Found")
 
-        self._logger.info(f"Metadata Filter Fields Found For {dataset}")
-        return response
+        return response.json()
+
+    def download_options(self, payload: DownloadOptionsPayload) -> Json:
+        self._logger.info("Searching Download Options")
+        self._logger.debug(f"Payload : {payload.to_pretty_json()}")
+        response = self._send_request_to_USGS("download-options", payload.to_json())
+        self._logger.info("Download Options Found")
+
+        return response.json()
+
+    def permissions(self) -> Json:
+        """
+        Shows the permissions available for the `User` currently logged in
+        to the USGS M2M API.
+
+        Returns
+        -------
+        response: Json
+            The response from the "permissions" endpoint of the M2M API.
+        """
+        self._logger.info("Fetching Permissions")
+        response = self._send_request_to_USGS("permissions")
+        self._logger.info("Permissions Fetched Successfully")
+
+        return response.json()
 
     def parse_scene_search_results(
         self, response: Json
@@ -231,6 +289,7 @@ class TheiaAPI(BaseModel):
         Each row of `metadata_df`, `browse_df`, and `results_df` is for one
         search result.
         """
+        self._logger.info("Parsing Scene Search Results")
         results = response.get("data").get("results")
         metadata_list = []
         browse_data_list = []
@@ -256,21 +315,9 @@ class TheiaAPI(BaseModel):
         results_df = pd.DataFrame(results)
         results_df.drop(["browse", "metadata"], axis=1, inplace=True)
 
+        self._logger.info("Scene Search Results Parsed Successfully")
+
         return (metadata_df, browse_df, results_df)
-
-    def permissions(self) -> Json:
-        """
-        Shows the permissions available for the `User` currently logged in
-        to the USGS M2M API.
-
-        Returns
-        -------
-        response: Json
-            The response from the "permissions" endpoint of the M2M API.
-        """
-        response = self._send_request_to_USGS("permissions")
-
-        return response
 
     def download_scene(
         self,
@@ -312,23 +359,22 @@ class TheiaAPI(BaseModel):
         downloads = []
 
         try:
-            self._logger.info("Retrieving download options...")
-            download_options = self._send_request_to_USGS(
-                endpoint="download-options",
-                payload=payload.to_json(),
-            )["data"]
+            self._logger.info("Retrieving Download Options")
+            download_options = self.download_options(payload=payload)["data"]
+
             downloads = [
                 {"entityId": product["entityId"], "productId": product["id"]}
                 for product in download_options
                 if product["available"]
             ]
+
         except USGSDatasetAuthError as e:
-            self._logger.error(f"Unable to retrieve download options: {e}")
+            self._logger.error("Unable To Retrieve Download Options")
 
         if downloads:
             requested_download_count = len(downloads)
 
-            self._logger.info("Requesting downloads...")
+            self._logger.info("Requesting Downloads")
 
             label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
             payload = {"downloads": downloads, "label": label}
@@ -489,37 +535,6 @@ class TheiaAPI(BaseModel):
             _sema.release()
             self._logger.info("Sema released...")
 
-    def scene_list_add(
-        self, dataset_name: str, scene_ids: List[str], list_id: str
-    ) -> Json:
-        """
-        Adds scenes to a scene list.
-
-        Parameters
-        ----------
-        dataset_name : str
-            The name of the dataset.
-        scene_ids : List[str]
-            A list of scene IDs to be added to the list.
-        list_id : str
-            The ID of the scene list to add scenes to.
-
-        Returns
-        -------
-        response : Json
-            The response from the "scene-list-add" endpoint of the USGS M2M API.
-        """
-        self._logger.info("Adding scenes to the scene list...")
-
-        payload = SceneListAdd(
-            datasetName=dataset_name, entityIds=scene_ids, listId=list_id
-        ).to_json()
-
-        response = self._send_request_to_USGS("scene-list-add", payload)
-
-        self._logger.info("Scenes successfully added to the list...")
-        return response
-
     def _initDatasetDetails(self) -> None:
         """
         Requests and stores the datasets that are available to the user
@@ -562,7 +577,9 @@ class TheiaAPI(BaseModel):
         self._logout_timer_manager(switch="start")
         self.login()
 
-    def _send_request_to_USGS(self, endpoint: str, payload: Json = "") -> Json:
+    def _send_request_to_USGS(
+        self, endpoint: str, payload: Json = ""
+    ) -> requests.Response:
         """
         Sends request to the USGS M2M API at the given endpoint with the given payload.
 
@@ -595,7 +612,7 @@ class TheiaAPI(BaseModel):
                 f" got {type(payload)} instead"
             )
 
-        response: requests.Response | None = None
+        response = Response()
         request_url = urljoin(self._base_url, endpoint)
 
         try:
@@ -606,9 +623,86 @@ class TheiaAPI(BaseModel):
             response = self._session.post(url=request_url, data=payload)
             self._check_exceptions(response)
 
-        return response.json()
+        return response
 
-    def _generate_scene_filter(self, params: SearchParams) -> SceneFilter:
+    def _check_exceptions(self, response: Response) -> None:
+        """
+        Utility method to check for exceptions in responses.
+
+        Parameters
+        ----------
+        response: Response
+            A requests.Response class object to check for exceptions.
+
+        Raises
+        ------
+        USGSAuthenticationError
+            If the response contains an authentication error.
+        USGSUnauthorizedError
+            If the response indicates the user is unauthorized.
+        USGSRateLimitError
+            If the response indicates the user has hit the rate limit.
+        USGSDatasetAuthError
+            If the response indicates a dataset authorization error.
+        USGSError
+            For all other errors not specifically handled.
+
+        Notes
+        -----
+        This method inspects the response from the USGS M2M API and raises appropriate exceptions.
+        """
+        data = response.json()
+        error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
+        msg = f"{error['code']}: {error['msg']}"
+
+        match error["code"]:
+            case "AUTH_INVALID" | "AUTH_KEY_INVALID":
+                self._logger.error(msg)
+                raise USGSAuthenticationError(msg)
+            case "AUTH_UNAUTHORIZED":
+                self._logger.error(msg)
+                raise USGSUnauthorizedError(msg)
+            case "RATE_LIMIT":
+                self._logger.error(msg)
+                raise USGSRateLimitError(msg)
+            case "DATASET_AUTH":
+                self._logger.error(msg)
+                raise USGSDatasetAuthError(msg)
+            case _:
+                if error["code"] is not None:
+                    self._logger.error(msg)
+                    raise USGSError(msg)
+
+    def _setup_logging(self) -> None:
+        """
+        Sets up logging for the `TheiaAPI` object.
+
+        Notes
+        -----
+        The log file is located in the directory where the code is run from.
+        """
+        self._logger.setLevel(logging.DEBUG)
+
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+
+        log_folder = "logs"
+        os.makedirs(log_folder, exist_ok=True)
+        log_file_path = os.path.join(log_folder, "theia_api.log")
+        file_handler = logging.FileHandler(log_file_path)
+        file_handler.setLevel(logging.DEBUG)
+
+        formatter = logging.Formatter(
+            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        )
+        console_handler.setFormatter(formatter)
+        file_handler.setFormatter(formatter)
+
+        self._logger.addHandler(console_handler)
+        self._logger.addHandler(file_handler)
+        self._logger.info("------------")
+
+    def generate_scene_filter(self, params: SearchParams) -> SceneFilter:
         """
         Generates a scene filter.
 
@@ -682,75 +776,3 @@ class TheiaAPI(BaseModel):
                 "Expected 'params' to be of type 'SearchParams',"
                 f" got {type(params)} instead"
             )
-
-    def _check_exceptions(self, response: Response) -> None:
-        """
-        Utility method to check for exceptions in responses.
-
-        Parameters
-        ----------
-        response: Response
-            A requests.Response class object to check for exceptions.
-
-        Raises
-        ------
-        USGSAuthenticationError
-            If the response contains an authentication error.
-        USGSUnauthorizedError
-            If the response indicates the user is unauthorized.
-        USGSRateLimitError
-            If the response indicates the user has hit the rate limit.
-        USGSDatasetAuthError
-            If the response indicates a dataset authorization error.
-        USGSError
-            For all other errors not specifically handled.
-
-        Notes
-        -----
-        This method inspects the response from the USGS M2M API and raises appropriate exceptions.
-        """
-        data = response.json()
-        error = {"code": data.get("errorCode"), "msg": data.get("errorMessage")}
-        msg = f"{error['code']}: {error['msg']}"
-
-        match error["code"]:
-            case "AUTH_INVALID" | "AUTH_KEY_INVALID":
-                raise USGSAuthenticationError(msg)
-            case "AUTH_UNAUTHORIZED":
-                raise USGSUnauthorizedError(msg)
-            case "RATE_LIMIT":
-                raise USGSRateLimitError(msg)
-            case "DATASET_AUTH":
-                raise USGSDatasetAuthError(msg)
-            case _:
-                if error["code"] is not None:
-                    raise USGSError(msg)
-
-    def _setup_logging(self) -> None:
-        """
-        Sets up logging for the `TheiaAPI` object.
-
-        Notes
-        -----
-        The log file is located in the directory where the code is run from.
-        """
-        self._logger.setLevel(logging.DEBUG)
-
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-
-        log_folder = "logs"
-        os.makedirs(log_folder, exist_ok=True)
-        log_file_path = os.path.join(log_folder, "theia_api.log")
-        file_handler = logging.FileHandler(log_file_path)
-        file_handler.setLevel(logging.DEBUG)
-
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        console_handler.setFormatter(formatter)
-        file_handler.setFormatter(formatter)
-
-        self._logger.addHandler(console_handler)
-        self._logger.addHandler(file_handler)
-        self._logger.info("------------")
