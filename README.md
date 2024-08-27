@@ -1,4 +1,5 @@
 ### TheiaAPI - Python Wrapper for USGS M2M API
+[![Built with Material for MkDocs](https://img.shields.io/badge/Material_for_MkDocs-526CFE?style=for-the-badge&logo=MaterialForMkDocs&logoColor=white)](https://squidfunk.github.io/mkdocs-material/)
 
 TheiaAPI is a Python wrapper for the USGS Machine-to-Machine (M2M) API, providing functionality to search, retrieve metadata, and download satellite imagery datasets. This library is designed to streamline interaction with the USGS API, offering robust error handling, logging, and threading capabilities for efficient data retrieval.
 
