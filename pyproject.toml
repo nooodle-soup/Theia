@@ -1,0 +1,10 @@
+[project]
+name = "theia"
+version = "0.1"
+description = "A USGS M2M Wrapper in Python"
+readme = "README.md"
+authors = [{ name = "Vineet Agarwal" }]
+license = { text = "Apache-2.0" }
+requires-python = ">=3.9"
+classifiers = ["License :: OSI Approved :: Apache Software License"]
+dependencies = []
