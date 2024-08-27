@@ -10,30 +10,31 @@ import re
 
 from urllib.parse import urljoin
 from typing import List, Tuple
-from pydantic import BaseModel, ConfigDict, Json, PrivateAttr
+from pydantic import BaseModel, ConfigDict, Json, PrivateAttr, validate_call
 from requests import Response
 from pandas import DataFrame
 
-from data_types import (
+from theia.data_types import (
     AcquisitionFilter,
     CloudCoverFilter,
     Coordinate,
     Dataset,
     SceneFilter,
-    SceneListAdd,
     SpatialFilterMbr,
 )
-from endpoint_types import (
+from theia.endpoint_payload_types import (
     DatasetFiltersPayload,
     DataOwnerPayload,
+    DatasetPayload,
     DownloadOptionsPayload,
+    SceneListAddPayload,
     SearchParamsPayload,
     SceneSearchPayload,
 )
-from util_types import (
+from theia.util_types import (
     User,
 )
-from errors import (
+from theia.errors import (
     USGSAuthenticationError,
     USGSError,
     USGSRateLimitError,
@@ -174,17 +175,18 @@ class TheiaAPI(BaseModel):
 
         Parameters
         ----------
-        dataset_name : str
-            The name of the dataset.
-        scene_ids : List[str]
-            A list of scene IDs to be added to the list.
-        list_id : str
-            The ID of the scene list to add scenes to.
+        payload: SceneListAddPayload
+            A SceneListAddPayload class object containing field values to send to
+            the scene-list-add endpoint.
 
         Returns
         -------
         response : requests.Response
             The response from the "scene-list-add" endpoint of the USGS M2M API.
+
+        Notes
+        -----
+        Reference: https://m2m.cr.usgs.gov/api/docs/reference/#scene-list-add
         """
         self._logger.info("Adding scenes to the scene list...")
         self._logger.debug(f"Payload : {payload.to_pretty_json()}")
@@ -245,6 +247,14 @@ class TheiaAPI(BaseModel):
 
         return response.json()
 
+    def download_request(self, payload: DownloadRequestPayload) -> Json:
+        self._logger.info("Searching Download Options")
+        self._logger.debug(f"Payload : {payload.to_pretty_json()}")
+        response = self._send_request_to_USGS("download-options", payload.to_json())
+        self._logger.info("Download Options Found")
+
+        return response.json()
+
     def permissions(self) -> Json:
         """
         Shows the permissions available for the `User` currently logged in
@@ -260,280 +270,6 @@ class TheiaAPI(BaseModel):
         self._logger.info("Permissions Fetched Successfully")
 
         return response.json()
-
-    def parse_scene_search_results(
-        self, response: Json
-    ) -> Tuple[DataFrame, DataFrame, DataFrame]:
-        """
-        Parses the response from the `scene_search` method.
-
-        Parameters
-        ----------
-        response: Json
-            The response from `scene_search`.
-
-        Returns
-        -------
-        metadata_df: DataFrame
-            The dataframe containing the metadata for each scene in the search
-            results.
-        browse_df: DataFrame
-            The dataframe containing the thumbnails for each scene in the search
-            results.
-        results_df: DataFrame
-            The dataframe containing all the data for each scene in the search
-            results except for metadata and browse.
-
-        Notes
-        -----
-        Each row of `metadata_df`, `browse_df`, and `results_df` is for one
-        search result.
-        """
-        self._logger.info("Parsing Scene Search Results")
-        results = response.get("data").get("results")
-        metadata_list = []
-        browse_data_list = []
-
-        for result in results:
-            result_metadata = {}
-            for item in result["metadata"]:
-                result_metadata[item["fieldName"]] = item["value"]
-            metadata_list.append(result_metadata)
-
-            result_browse_data = {}
-            for item in result["browse"]:
-                key = item["browseName"]
-                result_browse_data[f"{key} Browse Path"] = item["browsePath"]
-                result_browse_data[
-                    f"{
-                        key} Thumbnail Path"
-                ] = item["thumbnailPath"]
-            browse_data_list.append(result_browse_data)
-
-        metadata_df = pd.DataFrame(metadata_list)
-        browse_df = pd.DataFrame(browse_data_list)
-        results_df = pd.DataFrame(results)
-        results_df.drop(["browse", "metadata"], axis=1, inplace=True)
-
-        self._logger.info("Scene Search Results Parsed Successfully")
-
-        return (metadata_df, browse_df, results_df)
-
-    def download_scene(
-        self,
-        dataset_name: str,
-        path: str,
-        scene_id: str = None,
-        scene_ids: List[str] = None,
-        list_id: str | None = "",
-        includeSecondaryFileGroups: bool | None = False,
-    ) -> None:
-        """
-        Downloads the scenes specified by the scene_ids or scene_id.
-
-        Parameters
-        ----------
-        dataset_name : str
-            The name of the dataset.
-        path : str
-            The directory where downloaded files will be saved.
-        scene_ids : List[str]
-            A list of scene IDs to download.
-        max_threads : int, default=5
-            Maximum number of threads for concurrent downloads.
-        list_id : str, default=""
-            The ID of the scene list.
-
-        Notes
-        -----
-        The method manages the download process using threading for efficiency.
-        """
-
-        payload = DownloadOptions(
-            datasetName=dataset_name,
-            listId=list_id,
-            entityIds=scene_ids,
-            includeSecondaryFileGroups=True if includeSecondaryFileGroups else False,
-        )
-
-        downloads = []
-
-        try:
-            self._logger.info("Retrieving Download Options")
-            download_options = self.download_options(payload=payload)["data"]
-
-            downloads = [
-                {"entityId": product["entityId"], "productId": product["id"]}
-                for product in download_options
-                if product["available"]
-            ]
-
-        except USGSDatasetAuthError as e:
-            self._logger.error("Unable To Retrieve Download Options")
-
-        if downloads:
-            requested_download_count = len(downloads)
-
-            self._logger.info("Requesting Downloads")
-
-            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            payload = {"downloads": downloads, "label": label}
-
-            request_results = self._send_request_to_USGS(
-                endpoint="download-request",
-                payload=json.dumps(payload),
-            )
-            request_results = request_results["data"]
-
-            if request_results.get("preparingDownloads"):
-                more_download_urls = self._send_request_to_USGS(
-                    endpoint="download-retrieve",
-                    payload=json.dumps({"label": label}),
-                )
-                more_download_urls = more_download_urls["data"]
-
-                self._manage_downloads(
-                    more_download_urls,
-                    request_results,
-                    path,
-                    requested_download_count,
-                )
-            else:
-                for download in request_results["availableDownloads"]:
-                    self._run_download(download["url"], path)
-
-            self._logger.info("Downloading Files...")
-            for thread in self._threads:
-                thread.join()
-            self._threads.clear()
-            self._logger.info("All Downloads Complete...")
-        else:
-            self._logger.info("No available products for download.")
-
-    def _manage_downloads(
-        self,
-        download_urls: dict,
-        request_results: dict,
-        path: str,
-        requested_download_count: int,
-    ) -> None:
-        """
-        Manages the download process, handling retries and threading.
-
-        Parameters
-        ----------
-        download_urls : dict
-            URLs for available downloads.
-        request_results : dict
-            Results from the download request.
-        path : str
-            The directory where downloaded files will be saved.
-        sema : threading.Semaphore
-            Semaphore to control the number of concurrent threads.
-        requested_download_count : int
-            The total number of downloads requested.
-
-        Notes
-        -----
-        This method manages retries for downloads that are not immediately available.
-        """
-        download_ids = []
-
-        for download in download_urls.get("available", []):
-            if (
-                str(download["downloadId"]) in request_results["newRecords"]
-                or str(download["downloadId"]) in request_results["duplicateProducts"]
-            ):
-                download_ids.append(download["downloadId"])
-                self._run_download(download["url"], path)
-
-        for download in download_urls.get("requested", []):
-            if (
-                str(download["downloadId"]) in request_results["newRecords"]
-                or str(download["downloadId"]) in request_results["duplicateProducts"]
-            ):
-                download_ids.append(download["downloadId"])
-                self._run_download(download["url"], path)
-
-        while len(download_ids) < (
-            requested_download_count - len(request_results["failed"])
-        ):
-            preparingDownloads = (
-                requested_download_count
-                - len(download_ids)
-                - len(request_results["failed"])
-            )
-            self._logger.info(
-                f"{preparingDownloads} downloads are not available. Waiting for 30 seconds.",
-            )
-            time.sleep(30)
-            self._logger.info("Trying to retrieve data...")
-
-            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            payload = {"label": label}
-            moreDownloadUrls = self._send_request_to_USGS("download-retrieve", payload)
-            for download in moreDownloadUrls["available"]:
-                if download["downloadId"] not in download_ids and (
-                    str(download["downloadId"]) in request_results["newRecords"]
-                    or str(download["downloadId"])
-                    in request_results["duplicateProducts"]
-                ):
-                    download_ids.append(download["downloadId"])
-                    self._run_download(download["url"], path)
-
-    def _run_download(
-        self,
-        url: str,
-        path: str,
-    ) -> None:
-        """
-        Starts a new thread to handle a file download.
-
-        Parameters
-        ----------
-        url : str
-            The URL of the file to download.
-        path : str
-            The directory where the file will be saved.
-        sema : threading.Semaphore
-            Semaphore to control the number of concurrent threads.
-        """
-        thread = threading.Thread(target=self._download_file, args=(url, path))
-        self._threads.append(thread)
-        thread.start()
-
-    def _download_file(self, url: str, path: str) -> None:
-        """
-        Downloads a file from the specified URL.
-
-        Parameters
-        ----------
-        url : str
-            The URL of the file to download.
-        path : str
-            The directory where the file will be saved.
-        sema : threading.Semaphore
-            Semaphore to control the number of concurrent threads.
-
-        Notes
-        -----
-        This method handles the actual download of the file and saves it to disk.
-        """
-        _sema.acquire()
-        try:
-            response = requests.get(url, stream=True)
-            disposition = response.headers.get("content-disposition")
-            if disposition:
-                filename = re.findall("filename=(.+)", disposition)[0].strip('"')
-                self._logger.info(f"Downloading {filename}...")
-                with open(os.path.join(path, filename), "wb") as f:
-                    f.write(response.content)
-                self._logger.info(f"Downloaded {filename}.")
-        except Exception as e:
-            self._logger.error(f"Failed to download from {url}. error: {e}")
-        finally:
-            _sema.release()
-            self._logger.info("Sema released...")
 
     def _initDatasetDetails(self) -> None:
         """
@@ -702,7 +438,8 @@ class TheiaAPI(BaseModel):
         self._logger.addHandler(file_handler)
         self._logger.info("------------")
 
-    def generate_scene_filter(self, params: SearchParams) -> SceneFilter:
+    @validate_call
+    def generate_scene_filter(self, params: SearchParamsPayload) -> SceneFilter:
         """
         Generates a scene filter.
 
@@ -718,61 +455,325 @@ class TheiaAPI(BaseModel):
 
         Raises
         ------
-        TypeError
+        ValidationError
             If the `params` argument is not an instance of `SearchParams`.
 
         Notes
         -----
         This method converts the search parameters into a format suitable for the USGS M2M API.
         """
-        if isinstance(params, SearchParams):
-            filter_dict = {}
+        filter_dict = {}
 
-            if params.bbox is not None:
-                filter_dict["spatialFilter"] = SpatialFilterMbr(
-                    lowerLeft=params.bbox[0], upperRight=params.bbox[1]
-                )
-            elif params.longitude is not None and params.latitude is not None:
-                filter_dict["spatialFilter"] = SpatialFilterMbr(
-                    lowerLeft=Coordinate(
-                        longitude=params.longitude, latitude=params.latitude
-                    ),
-                    upperRight=Coordinate(
-                        longitude=params.longitude, latitude=params.latitude
-                    ),
-                )
+        if params.bbox is not None:
+            filter_dict["spatialFilter"] = SpatialFilterMbr(
+                lowerLeft=params.bbox[0], upperRight=params.bbox[1]
+            )
+        elif params.longitude is not None and params.latitude is not None:
+            filter_dict["spatialFilter"] = SpatialFilterMbr(
+                lowerLeft=Coordinate(
+                    longitude=params.longitude, latitude=params.latitude
+                ),
+                upperRight=Coordinate(
+                    longitude=params.longitude, latitude=params.latitude
+                ),
+            )
 
-            if params.start_date is not None and params.end_date is not None:
-                filter_dict["acquisitionFilter"] = AcquisitionFilter(
-                    start=params.start_date, end=params.end_date
-                )
+        if params.start_date is not None and params.end_date is not None:
+            filter_dict["acquisitionFilter"] = AcquisitionFilter(
+                start=params.start_date, end=params.end_date
+            )
 
-            if (
-                params.max_cloud_cover is not None
-                and params.min_cloud_cover is not None
-            ):
-                filter_dict["cloudCoverFilter"] = CloudCoverFilter(
-                    min=params.min_cloud_cover, max=params.max_cloud_cover
-                )
-            elif params.max_cloud_cover is not None:
-                filter_dict["cloudCoverFilter"] = CloudCoverFilter(
-                    max=params.max_cloud_cover
-                )
-            elif params.min_cloud_cover is not None:
-                filter_dict["cloudCoverFilter"] = CloudCoverFilter(
-                    min=params.min_cloud_cover
+        if params.max_cloud_cover is not None and params.min_cloud_cover is not None:
+            filter_dict["cloudCoverFilter"] = CloudCoverFilter(
+                min=params.min_cloud_cover, max=params.max_cloud_cover
+            )
+        elif params.max_cloud_cover is not None:
+            filter_dict["cloudCoverFilter"] = CloudCoverFilter(
+                max=params.max_cloud_cover
+            )
+        elif params.min_cloud_cover is not None:
+            filter_dict["cloudCoverFilter"] = CloudCoverFilter(
+                min=params.min_cloud_cover
+            )
+        else:
+            filter_dict["cloudCoverFilter"] = CloudCoverFilter()
+
+        if params.months is not None:
+            filter_dict["seasonalFilter"] = params.months
+
+        scene_filter = SceneFilter(**filter_dict)
+
+        return scene_filter
+
+    def parse_scene_search_results(
+        self, response: Json
+    ) -> Tuple[DataFrame, DataFrame, DataFrame]:
+        """
+        Parses the response from the `scene_search` method.
+
+        Parameters
+        ----------
+        response: Json
+            The response from `scene_search`.
+
+        Returns
+        -------
+        metadata_df: DataFrame
+            The dataframe containing the metadata for each scene in the search
+            results.
+        browse_df: DataFrame
+            The dataframe containing the thumbnails for each scene in the search
+            results.
+        results_df: DataFrame
+            The dataframe containing all the data for each scene in the search
+            results except for metadata and browse.
+
+        Notes
+        -----
+        Each row of `metadata_df`, `browse_df`, and `results_df` is for one
+        search result.
+        """
+        self._logger.info("Parsing Scene Search Results")
+        results = response.get("data").get("results")
+        metadata_list = []
+        browse_data_list = []
+
+        for result in results:
+            result_metadata = {}
+            for item in result["metadata"]:
+                result_metadata[item["fieldName"]] = item["value"]
+            metadata_list.append(result_metadata)
+
+            result_browse_data = {}
+            for item in result["browse"]:
+                key = item["browseName"]
+                result_browse_data[f"{key} Browse Path"] = item["browsePath"]
+                result_browse_data[
+                    f"{
+                        key} Thumbnail Path"
+                ] = item["thumbnailPath"]
+            browse_data_list.append(result_browse_data)
+
+        metadata_df = pd.DataFrame(metadata_list)
+        browse_df = pd.DataFrame(browse_data_list)
+        results_df = pd.DataFrame(results)
+        results_df.drop(["browse", "metadata"], axis=1, inplace=True)
+
+        self._logger.info("Scene Search Results Parsed Successfully")
+
+        return (metadata_df, browse_df, results_df)
+
+    def download_scene(
+        self,
+        dataset_name: str,
+        path: str,
+        scene_ids: List[str] | None = None,
+        list_id: str | None = "",
+        includeSecondaryFileGroups: bool | None = False,
+    ) -> None:
+        """
+        Downloads the scenes specified by the scene_ids or scene_id.
+
+        Parameters
+        ----------
+        dataset_name : str
+            The name of the dataset.
+        path : str
+            The directory where downloaded files will be saved.
+        scene_ids : List[str]
+            A list of scene IDs to download.
+        max_threads : int, default=5
+            Maximum number of threads for concurrent downloads.
+        list_id : str, default=""
+            The ID of the scene list.
+
+        Notes
+        -----
+        The method manages the download process using threading for efficiency.
+        """
+
+        payload = DownloadOptionsPayload(
+            datasetName=dataset_name,
+            listId=list_id,
+            entityIds=scene_ids,
+            includeSecondaryFileGroups=True if includeSecondaryFileGroups else False,
+        )
+
+        downloads = []
+
+        try:
+            self._logger.info("Retrieving Download Options")
+            download_options = self.download_options(payload=payload)["data"]
+
+            downloads = [
+                {"entityId": product["entityId"], "productId": product["id"]}
+                for product in download_options
+                if product["available"]
+            ]
+
+        except USGSDatasetAuthError as e:
+            self._logger.error(e)
+
+        if downloads:
+            requested_download_count = len(downloads)
+
+            self._logger.info("Requesting Downloads")
+
+            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            payload = {"downloads": downloads, "label": label}
+
+            request_results = self._send_request_to_USGS(
+                endpoint="download-request",
+                payload=json.dumps(payload),
+            ).json()
+            request_results = request_results["data"]
+
+            if request_results.get("preparingDownloads"):
+                more_download_urls = self._send_request_to_USGS(
+                    endpoint="download-retrieve",
+                    payload=json.dumps({"label": label}),
+                ).json()
+                more_download_urls = more_download_urls["data"]
+
+                self._manage_downloads(
+                    more_download_urls,
+                    request_results,
+                    path,
+                    requested_download_count,
                 )
             else:
-                filter_dict["cloudCoverFilter"] = CloudCoverFilter()
+                for download in request_results["availableDownloads"]:
+                    self._run_download(download["url"], path)
 
-            if params.months is not None:
-                filter_dict["seasonalFilter"] = params.months
-
-            scene_filter = SceneFilter(**filter_dict)
-
-            return scene_filter
+            self._logger.info("Downloading Files...")
+            for thread in self._threads:
+                thread.join()
+            self._threads.clear()
+            self._logger.info("All Downloads Complete...")
         else:
-            raise TypeError(
-                "Expected 'params' to be of type 'SearchParams',"
-                f" got {type(params)} instead"
+            self._logger.info("No available products for download.")
+
+    def _manage_downloads(
+        self,
+        download_urls: dict,
+        request_results: dict,
+        path: str,
+        requested_download_count: int,
+    ) -> None:
+        """
+        Manages the download process, handling retries and threading.
+
+        Parameters
+        ----------
+        download_urls : dict
+            URLs for available downloads.
+        request_results : dict
+            Results from the download request.
+        path : str
+            The directory where downloaded files will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+        requested_download_count : int
+            The total number of downloads requested.
+
+        Notes
+        -----
+        This method manages retries for downloads that are not immediately available.
+        """
+        download_ids = []
+
+        for download in download_urls.get("available", []):
+            if (
+                str(download["downloadId"]) in request_results["newRecords"]
+                or str(download["downloadId"]) in request_results["duplicateProducts"]
+            ):
+                download_ids.append(download["downloadId"])
+                self._run_download(download["url"], path)
+
+        for download in download_urls.get("requested", []):
+            if (
+                str(download["downloadId"]) in request_results["newRecords"]
+                or str(download["downloadId"]) in request_results["duplicateProducts"]
+            ):
+                download_ids.append(download["downloadId"])
+                self._run_download(download["url"], path)
+
+        while len(download_ids) < (
+            requested_download_count - len(request_results["failed"])
+        ):
+            preparingDownloads = (
+                requested_download_count
+                - len(download_ids)
+                - len(request_results["failed"])
             )
+            self._logger.info(
+                f"{preparingDownloads} downloads are not available. Waiting for 30 seconds.",
+            )
+            time.sleep(30)
+            self._logger.info("Trying to retrieve data...")
+
+            label = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            payload = {"label": label}
+            moreDownloadUrls = self._send_request_to_USGS("download-retrieve", payload)
+            for download in moreDownloadUrls["available"]:
+                if download["downloadId"] not in download_ids and (
+                    str(download["downloadId"]) in request_results["newRecords"]
+                    or str(download["downloadId"])
+                    in request_results["duplicateProducts"]
+                ):
+                    download_ids.append(download["downloadId"])
+                    self._run_download(download["url"], path)
+
+    def _run_download(
+        self,
+        url: str,
+        path: str,
+    ) -> None:
+        """
+        Starts a new thread to handle a file download.
+
+        Parameters
+        ----------
+        url : str
+            The URL of the file to download.
+        path : str
+            The directory where the file will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+        """
+        thread = threading.Thread(target=self._download_file, args=(url, path))
+        self._threads.append(thread)
+        thread.start()
+
+    def _download_file(self, url: str, path: str) -> None:
+        """
+        Downloads a file from the specified URL.
+
+        Parameters
+        ----------
+        url : str
+            The URL of the file to download.
+        path : str
+            The directory where the file will be saved.
+        sema : threading.Semaphore
+            Semaphore to control the number of concurrent threads.
+
+        Notes
+        -----
+        This method handles the actual download of the file and saves it to disk.
+        """
+        _sema.acquire()
+        try:
+            response = requests.get(url, stream=True)
+            disposition = response.headers.get("content-disposition")
+            if disposition:
+                filename = re.findall("filename=(.+)", disposition)[0].strip('"')
+                self._logger.info(f"Downloading {filename}...")
+                with open(os.path.join(path, filename), "wb") as f:
+                    f.write(response.content)
+                self._logger.info(f"Downloaded {filename}.")
+        except Exception as e:
+            self._logger.error(f"Failed to download from {url}. error: {e}")
+        finally:
+            _sema.release()
+            self._logger.info("Sema released...")

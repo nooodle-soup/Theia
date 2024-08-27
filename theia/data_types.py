@@ -1,7 +1,12 @@
 from enum import Enum
-from pydantic import Field, validator, root_validator
+from pydantic import Field, field_validator, validator, root_validator
 from typing import List, Union
 from theia.util_types import BaseDataModel
+
+
+class SortOrderType(Enum):
+    ASC = "ASC"
+    DESC = "DESC"
 
 
 class MetadataFilterType(Enum):
@@ -159,13 +164,11 @@ class GeoJson(BaseDataModel):
             )
         elif type == "Polygon":
             return cls(
-                type=type, coordinates=[Coordinate(
-                    **point) for point in coordinates[0]]
+                type=type, coordinates=[Coordinate(**point) for point in coordinates[0]]
             )
         elif type == "LineString":
             return cls(
-                type=type, coordinates=[Coordinate(
-                    **point) for point in coordinates]
+                type=type, coordinates=[Coordinate(**point) for point in coordinates]
             )
         elif type == "Point":
             return cls(type=type, coordinates=[Coordinate(**coordinates)])
@@ -315,7 +318,7 @@ class SceneFilter(BaseDataModel):
 
 class Download(BaseDataModel):
     """
-    Data class representing a download entity.
+    Data class representing a Download data type.
 
     Attributes
     ----------
@@ -335,42 +338,67 @@ class Download(BaseDataModel):
     label: str | None = None
 
 
-class SortCustomization(BaseDataModel):
-    pass
+class FilegroupDownload(BaseDataModel):
+    """
+    Data class representing a FilegroupDownload data type.
 
-
-class SceneList(BaseDataModel):
-    listId: str
-
-
-class SceneListAdd(SceneList):
+    Attributes
+    ----------
     datasetName: str
-    idField: SceneIdentifier = Field(
-        default=SceneIdentifier.ENTITYID, validate_default=True
-    )
-    entityId: str | None = None
-    entityIds: List[str] | None = None
-    timeToLive: str | None = None
-    checkDownloadRestriction: bool | None = None
+        Dataset name.
+    fileGroups: List[str]
+        Internal codes used to represent the file groups.
+    listId: str, optional
+        The name of scene list to request from.
+    dataUse: str, optional
+        The type of use of this data.
+    label: str, optional
+        The label name used when requesting the download.
+    """
 
-    @root_validator(skip_on_failure=True)
-    def check_entity_fields(cls, values):
-        entity_id = values.get("entityId")
-        entity_ids = values.get("entityIds")
-
-        if entity_id and entity_ids:
-            raise ValueError(
-                "Only one of 'entityId' or 'entityIds' should be provided, not both."
-            )
-
-        if not entity_id and not entity_ids:
-            raise ValueError(
-                "Either 'entityId' or 'entityIds' must be provided.")
-
-        return values
+    datasetName: str
+    fileGroups: List[str]
+    listId: str | None = None
+    dataUse: str | None = None
+    label: str | None = None
 
 
-class SceneListRemove(SceneList):
-    datasetName: str | None = None
-    entityId: str | None = None
-    entityIds: List[str] | None = None
+class FilepathDownload(BaseDataModel):
+    """
+    Data class representing a FilepathDownload data type.
+
+    Attributes
+    ----------
+    datasetName: str
+        Dataset name.
+    productCode: str
+        Internal code used to represent this product during ordering.
+    dataPath: str, optional
+        The data location to stream the download from.
+    dataUse: str, optional
+        The type of use of this data.
+    label: str, optional
+        The label name used when requesting the download.
+    """
+
+    datasetName: str
+    productCode: str
+    dataPath: str | None = None
+    dataUse: str | None = None
+    label: str | None = None
+
+
+class SortCustomization(BaseDataModel):
+    """
+    Data class representing a SortCustomization data type.
+
+    Attributes
+    ----------
+    field_name: str
+        Used to identify which field you want to sort by.
+    direction: SortOrderType
+        Used to determine which directions to sort (ASC, DESC).
+    """
+
+    field_name: str
+    direction: SortOrderType

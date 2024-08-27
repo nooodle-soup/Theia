@@ -74,7 +74,13 @@ def set_credentials(
     """
 
     if directory is None:
-        if os.name == "posix":  # Linux and macOS
+        if os.name == "nt":  # Windows
+            appdata = os.environ.get("APPDATA")
+            if appdata:
+                config_dir = Path(appdata) / ".theia"
+            else:
+                config_dir = Path.home() / ".theia"
+        elif os.name == "posix":  # Linux and macOS
             xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
             if xdg_config_home:  # XDG_CONFIG_HOME is set
                 config_dir = Path(xdg_config_home) / ".theia"
@@ -85,12 +91,6 @@ def set_credentials(
                     )
                 else:  # Linux
                     config_dir = Path.home() / ".config" / ".theia"
-        elif os.name == "nt":  # Windows
-            appdata = os.environ.get("APPDATA")
-            if appdata:
-                config_dir = Path(appdata) / ".theia"
-            else:
-                config_dir = Path.home() / ".theia"
         else:
             raise EnvironmentError("Unsupported operating system")
 
