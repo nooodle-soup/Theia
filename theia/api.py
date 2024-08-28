@@ -22,7 +22,7 @@ from theia.data_types import (
     SceneFilter,
     SpatialFilterMbr,
 )
-from theia.endpoint_payload_types import (
+from theia.payloads import (
     DatasetFiltersPayload,
     DataOwnerPayload,
     DatasetPayload,
@@ -48,7 +48,7 @@ MAX_THREADS = 5
 _sema: threading.Semaphore = threading.Semaphore(value=MAX_THREADS)
 
 
-class TheiaAPI(BaseModel):
+class Theia(BaseModel):
     _logger: logging.Logger = PrivateAttr(default=logging.getLogger(__name__))
     _base_url: str = PrivateAttr(default=API_URL)
     _session: requests.sessions.Session = PrivateAttr(default_factory=requests.Session)

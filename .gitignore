@@ -1,3 +1,5 @@
+./requirements.txt
+./dev_requirements.txt
 .env.secret
 site/
 **/__pycache__
