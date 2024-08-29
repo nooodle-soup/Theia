@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  theia:
+    build: .
+    image: theia-dev
+    volumes:
+      - .:/usr/dev/theia-project  # Mount the current directory to /usr/dev/theia-project inside the container
+    environment:
+      - PYTHONUNBUFFERED=1
+    network_mode: host
+    working_dir: /usr/dev/theia-project  # Set the working directory inside the container
+    entrypoint: ["sh", "-c", "source /usr/dev/venv/bin/activate && sh"]  # Start an interactive shell with the venv activated

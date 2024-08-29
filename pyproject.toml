@@ -2,6 +2,9 @@
 requires = ["setuptools", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
 
+[tool.setuptools]
+packages = ["theia"]
+
 [project]
 name = "theia"
 version = "0.1.0"
@@ -10,16 +13,27 @@ description = "A USGS M2M Wrapper in Python"
 authors = [
   { name = "Vineet Agarwal", email = "vineetagarwal2402@gmail.com"}
 ]
-license = { text = "MIT" }
+license = { file = "LICENSE" }
 requires-python = ">=3.9"
-classifiers = [
+classifiers = [ 
+  "Development Status :: 3 - Alpha",
   "Programming Language :: Python :: 3",
   "License :: OSI Approved :: MIT License",
   "Operating System :: OS Independent",
+  "Topic :: Software Development :: Libraries :: Python Modules"
 ]
 dependencies = [
   "pydantic>=2.8.2",
-  "pandas>2.2.2",
+  "pandas>=2.2.2",
+  "requests"
+]
+
+[project.optional-dependencies]
+dev = [
+  "mkdocs",
+  "mkdocs-material",
+  "pytest",
+  "ipython"
 ]
 
 [tool.setuptools.dynamic]

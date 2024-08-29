@@ -27,6 +27,7 @@ from theia.payloads import (
     DataOwnerPayload,
     DatasetPayload,
     DownloadOptionsPayload,
+    DownloadRequestPayload,
     SceneListAddPayload,
     SearchParamsPayload,
     SceneSearchPayload,
